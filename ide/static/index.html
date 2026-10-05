@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EDITH — Desktop Companion, Laptop Control & Visual Intelligence</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <!-- Markdown parser -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <!-- Mermaid.js para diagramas y mapas conceptuales -->
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <!-- Chart.js para gráficas de datos -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <!-- Header Superior -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-icon">👓</span>
+      <div class="brand-info">
+        <h1>EDITH <span>DESKTOP</span></h1>
+        <p class="tagline">Compañera de Vida, Control de Laptop & Inteligencia Visual</p>
+      </div>
+    </div>
+
+    <!-- Monitores Rápidos de Laptop -->
+    <div class="system-quick-stats" id="systemQuickStats" title="Estado de tu laptop">
+      <span class="stat-item" id="batteryStat">🔋 Batería: --</span>
+      <span class="stat-divider">|</span>
+      <span class="stat-item" id="cpuStat">⚡ CPU: --</span>
+      <span class="stat-divider">|</span>
+      <span class="stat-item" id="ramStat">💾 RAM: --</span>
+    </div>
+
+    <div class="status-group">
+      <!-- Botón de Wake Word ("Oye EDITH") -->
+      <div class="wakeword-control">
+        <button id="btnWakeWord" class="btn-wakeword active" title="Detección continua por voz: di 'Oye EDITH'">
+          <span class="mic-wave"></span>
+          <span id="wakeWordLabel">🎙️ "Oye EDITH" Activo</span>
+        </button>
+      </div>
+
+      <!-- Selector de Voz Natural -->
+      <div class="voice-picker">
+        <select id="voiceSelect" title="Elegir voz natural de EDITH">
+          <option value="elvira">Elvira (Cálida y humana)</option>
+          <option value="dalia">Dalia (Serena y suave)</option>
+          <option value="ximena">Ximena (Espontánea y cercana)</option>
+          <option value="salome">Salomé (Dulce y empática)</option>
+        </select>
+        <button id="btnVoiceToggle" class="btn-voice active" title="Alternar Sonido">🔊</button>
+      </div>
+
+      <div class="session-picker">
+        <select id="sessionSelect" title="Historial de charlas">
+          <option value="">Cargando...</option>
+        </select>
+        <button id="btnNewSession" title="Nueva Conversación">+ Nueva</button>
+      </div>
+
+      <div class="mode-toggle">
+        <button class="btn-toggle active" id="btnModeStandard" title="Conversación tú a tú">Tú a Tú</button>
+        <button class="btn-toggle" id="btnModeCoworking" title="Equipo multi-agente">👥 Co-Working</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Layout Principal de 3 Columnas -->
+  <main class="ide-container">
+    
+    <!-- Columna Izquierda: Recursos, Sistema & Memoria -->
+    <aside class="sidebar">
+      <div class="sidebar-tabs">
+        <button class="tab-btn active" data-tab="filesTab">📁 Workspace</button>
+        <button class="tab-btn" data-tab="systemTab">💻 Laptop</button>
+        <button class="tab-btn" data-tab="learningsTab">🌱 Evolución</button>
+      </div>
+
+      <!-- Tab 1: Archivos -->
+      <div class="tab-content active" id="filesTab">
+        <div class="panel-header">
+          <span>Archivos y Diagramas</span>
+          <button id="btnNewFile" title="Crear nota o código">+ Nuevo</button>
+        </div>
+        <ul class="file-list" id="fileList">
+          <li class="file-loading">Explorando workspace...</li>
+        </ul>
+      </div>
+
+      <!-- Tab 2: Control de Laptop -->
+      <div class="tab-content" id="systemTab">
+        <div class="panel-header">
+          <span>Control de Laptop & Apps</span>
+          <button id="btnRefreshSystem" title="Actualizar">↻</button>
+        </div>
+        <div class="system-panel" id="systemPanel">
+          <div class="quick-apps">
+            <span class="section-title">Lanzar Aplicaciones:</span>
+            <div class="apps-grid">
+              <button class="btn-app" onclick="launchApp('chrome')">🌐 Chrome</button>
+              <button class="btn-app" onclick="launchApp('calc')">🔢 Calculadora</button>
+              <button class="btn-app" onclick="launchApp('notepad')">📝 Bloc Notas</button>
+              <button class="btn-app" onclick="launchApp('spotify')">🎵 Spotify</button>
+              <button class="btn-app" onclick="launchApp('explorer')">📂 Archivos</button>
+              <button class="btn-app" onclick="launchApp('vscode')">💻 VS Code</button>
+            </div>
+          </div>
+          <div class="volume-control-box">
+            <span class="section-title">Control de Volumen:</span>
+            <div class="volume-buttons">
+              <button class="btn-vol" onclick="adjustVolume('up')">🔊 Subir</button>
+              <button class="btn-vol" onclick="adjustVolume('down')">🔉 Bajar</button>
+              <button class="btn-vol" onclick="adjustVolume('mute')">🔇 Silenciar</button>
+            </div>
+          </div>
+          <div class="hardware-card" id="hardwareCardDetails">
+            <span class="section-title">Hardware:</span>
+            <pre id="hardwareDetails">Consultando estado...</pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 3: Aprendizaje de Errores -->
+      <div class="tab-content" id="learningsTab">
+        <div class="panel-header">
+          <span>Auto-Corrección y Heurísticas</span>
+          <button id="btnRefreshLearnings" title="Recargar">↻</button>
+        </div>
+        <div class="learnings-list" id="learningsList">
+          <p class="empty-state">No hay errores registrados.</p>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Centro: Área Multifuncional (Notas, Código o Diagramas) -->
+    <section class="editor-section">
+      <div class="editor-header">
+        <div class="center-mode-tabs">
+          <button class="center-tab-btn active" id="tabDailyView">📝 Notas & Día a Día</button>
+          <button class="center-tab-btn" id="tabCodeView">💻 Sección de Código</button>
+          <button class="center-tab-btn" id="tabDiagramView">📊 Diagramas & Mapas</button>
+        </div>
+        <div class="editor-actions">
+          <span id="currentFileName" class="active-file-label">notas_del_dia.md</span>
+          <button id="btnSaveFile">💾 Guardar</button>
+        </div>
+      </div>
+
+      <!-- Vista de Editor de Texto / Código -->
+      <div class="editor-body" id="editorBodyView">
+        <textarea id="codeEditor" placeholder="Tus notas, ideas para el día, tareas cotidianas o código para programar con EDITH..." spellcheck="false"></textarea>
+      </div>
+
+      <!-- Vista de Diagramas y Gráficas Interactivas -->
+      <div class="diagram-body" id="diagramBodyView" style="display: none;">
+        <div class="diagram-toolbar">
+          <span id="diagramTitle">Mapa Conceptual / Gráfica Visual</span>
+          <button id="btnExportDiagram" title="Descargar como imagen">⬇ Descargar SVG</button>
+        </div>
+        <div class="diagram-render-area" id="diagramRenderArea">
+          <div class="mermaid" id="mermaidContainer">
+mindmap
+  root((EDITH AI))
+    Compañera Cotidiana
+      Charlas del día a día
+      Reflexiones personales
+      Empatía & Calidez
+    Pensamiento Lógico Profundo
+      Primeros principios
+      Deducción estructurada
+      Dialéctica crítica
+    Control de Laptop
+      Abrir aplicaciones
+      Métricas de Hardware
+      Comandos de sistema
+    Inteligencia Visual
+      Mapas conceptuales
+      Diagramas de flujo
+      Gráficas de datos
+          </div>
+        </div>
+      </div>
+
+      <div class="editor-footer">
+        <span id="editorStatus">Espacio compartido listo</span>
+      </div>
+    </section>
+
+    <!-- Columna Derecha: Diálogo, Razonamiento y Co-Working -->
+    <section class="chat-section">
+      
+      <!-- Monitor de Co-Working en Equipo -->
+      <div class="coworking-monitor" id="coworkingMonitor" style="display: none;">
+        <div class="team-card" id="cardEdith">
+          <div class="card-avatar">👓</div>
+          <div class="card-details">
+            <span class="card-name">EDITH</span>
+            <span class="card-role">Líder & Estratega</span>
+          </div>
+        </div>
+        <div class="team-card" id="cardScout">
+          <div class="card-avatar">🕵️</div>
+          <div class="card-details">
+            <span class="card-name">Scout</span>
+            <span class="card-role">Investigador Web</span>
+          </div>
+        </div>
+        <div class="team-card" id="cardAuditor">
+          <div class="card-avatar">🧐</div>
+          <div class="card-details">
+            <span class="card-name">Auditor</span>
+            <span class="card-role">Crítico Dialéctico</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Gaveta de Pensamiento Lógico & Abstracto -->
+      <div class="thought-container" id="thoughtContainer">
+        <div class="thought-header" id="thoughtHeader">
+          <span class="thought-title">🧠 Pensamiento Lógico Profundo & Deducción</span>
+          <span class="thought-indicator" id="thoughtIndicator">En reposo</span>
+        </div>
+        <div class="thought-content" id="thoughtContent">
+          <p class="thought-placeholder">El análisis conceptual y validación lógica de EDITH aparecerán aquí en vivo.</p>
+        </div>
+      </div>
+
+      <!-- Hilo de Mensajes -->
+      <div class="chat-messages" id="chatMessages">
+        <div class="message assistant-msg">
+          <div class="msg-header">
+            <span class="avatar">👓</span>
+            <span class="name">EDITH</span>
+            <span class="time">Ahora</span>
+          </div>
+          <div class="msg-body">
+            <p>Hola. Estoy en línea y lista. Tienes mi voz natural activa, el control de tu laptop disponible y la capacidad de crear mapas conceptuales, diagramas o código cuando me lo pidas. Además, puedes llamarme diciendo <strong>"Oye EDITH"</strong>. ¿Qué haremos hoy?</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Barra de Entrada y Micrófono -->
+      <div class="chat-input-wrapper">
+        <form id="chatForm">
+          <button type="button" id="btnMicInput" class="btn-mic" title="Hablar por micrófono">🎙️</button>
+          <textarea id="promptInput" placeholder="Escribe o di 'Oye EDITH' para hablarle... (Shift+Enter para salto)" rows="2"></textarea>
+          <div class="input-controls">
+            <button type="submit" id="btnSend">Enviar ➔</button>
+          </div>
+        </form>
+      </div>
+
+    </section>
+
+  </main>
+
+  <audio id="edithAudio" preload="auto"></audio>
+
+  <script src="app.js"></script>
+</body>
+</html>

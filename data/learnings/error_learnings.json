@@ -1,0 +1,16 @@
+[
+  {
+    "id": "init_1",
+    "task": "Búsqueda web",
+    "error": "Búsquedas con términos excesivamente largos o específicos devuelven listas vacías.",
+    "lesson": "Al buscar en internet, utilizar palabras clave concisas y entidades directas, evitando oraciones completas con signos de puntuación.",
+    "timestamp": "2026-09-26T14:12:54.185971"
+  },
+  {
+    "id": "init_2",
+    "task": "Lectura de páginas web",
+    "error": "Intentar leer URLs no válidas o de servicios con bloqueo agresivo de bots.",
+    "lesson": "Verificar que el enlace comience con http:// o https:// y descartar URLs rotas o que requieran inicio de sesión obligatorio.",
+    "timestamp": "2026-09-26T14:12:54.185978"
+  }
+]
