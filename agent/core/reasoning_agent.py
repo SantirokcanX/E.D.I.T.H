@@ -16,6 +16,8 @@ from ..tools import (
     run_system_command,
     control_system_volume,
     save_diagram,
+    capture_screen,
+    analyze_screen,
     ALL_TOOLS_METADATA
 )
 from ..memory.memory_manager import get_memory_manager, MemoryManager
@@ -171,6 +173,14 @@ class ReasoningAgent:
                 diagram_type = args.get("diagram_type", "mermaid")
                 code = args.get("code", "")
                 return save_diagram(title=title, diagram_type=diagram_type, code=code)
+
+            elif tool_name == "capture_screen":
+                area = args.get("area", "full")
+                return capture_screen(area=area)
+
+            elif tool_name == "analyze_screen":
+                query = args.get("query", None)
+                return analyze_screen(query=query)
 
             else:
                 err_msg = f"Herramienta desconocida: '{tool_name}'"

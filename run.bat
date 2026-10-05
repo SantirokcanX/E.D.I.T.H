@@ -13,6 +13,12 @@ if exist ".venv\Scripts\activate.bat" (
     echo [ADVERTENCIA] No se detecto .venv. Intentando con Python global...
 )
 
+tasklist /FI "IMAGENAME eq ollama.exe" 2>NUL | find /I /N "ollama.exe" >NUL
+if "%ERRORLEVEL%"=="1" (
+    echo [INFO] Iniciando motor local de Ollama en segundo plano...
+    start "" /B ollama serve >NUL 2>&1
+)
+
 echo Iniciando E.D.I.T.H...
 python main.py %*
 

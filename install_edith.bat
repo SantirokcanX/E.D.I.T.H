@@ -14,17 +14,20 @@ powershell -NoProfile -Command ^
     "$startPath = [Environment]::GetFolderPath('StartMenu') + '\Programs'; " ^
     "$target = Join-Path (Get-Location) 'run_desktop.bat'; " ^
     "$workDir = (Get-Location).Path; " ^
+    "$icoPath = Join-Path $workDir 'edith.ico'; " ^
     "$s1 = $ws.CreateShortcut($deskPath + '\EDITH.lnk'); " ^
     "$s1.TargetPath = $target; " ^
     "$s1.WorkingDirectory = $workDir; " ^
+    "$s1.IconLocation = $icoPath; " ^
     "$s1.Description = 'EDITH - AI Companion, Laptop Control & Visual Intelligence'; " ^
     "$s1.Save(); " ^
     "$s2 = $ws.CreateShortcut($startPath + '\EDITH.lnk'); " ^
     "$s2.TargetPath = $target; " ^
     "$s2.WorkingDirectory = $workDir; " ^
+    "$s2.IconLocation = $icoPath; " ^
     "$s2.Description = 'EDITH - AI Companion, Laptop Control & Visual Intelligence'; " ^
     "$s2.Save(); " ^
-    "Write-Host 'Accesos directos creados exitosamente en el Escritorio y Menu Inicio.' -ForegroundColor Green"
+    "Write-Host 'Accesos directos creados con icono personalizado en el Escritorio y Menu Inicio.' -ForegroundColor Green"
 
 echo.
 echo ========================================================

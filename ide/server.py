@@ -19,6 +19,7 @@ from agent.memory.memory_manager import get_memory_manager
 from agent.learning.error_learner import get_error_learner
 from agent.tools.workspace_tools import WORKSPACE_DIR, save_to_workspace, read_workspace_file, list_workspace_files
 from agent.tools.system_tools import get_system_status, open_application, run_system_command, control_system_volume
+from agent.tools.screen_tools import capture_screen, analyze_screen, SCREENSHOTS_DIR
 
 app = FastAPI(title="EDITH Studio IDE & Companion Hub")
 
@@ -28,7 +29,13 @@ STATIC_DIR.mkdir(parents=True, exist_ok=True)
 AUDIO_DIR = BASE_DIR / "data" / "audio"
 AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 
+import threading
+from agent.providers.ollama_provider import ensure_ollama_running
+
 # Instancia global del agente y equipo
+if Config.PROVIDER == "ollama":
+    threading.Thread(target=ensure_ollama_running, daemon=True).start()
+
 provider = get_provider()
 edith_agent = ReasoningAgent(provider=provider, max_iterations=Config.MAX_ITERATIONS)
 coworking_team = CoworkingTeam(provider=provider)
@@ -131,6 +138,20 @@ def api_get_audio(filename: str):
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Audio file not found")
     return FileResponse(file_path, media_type="audio/mpeg")
+
+
+@app.post("/api/screen/capture")
+def api_capture_screen():
+    res = capture_screen(area="full")
+    return res
+
+
+@app.get("/api/workspace/screenshot/{filename}")
+def api_get_screenshot(filename: str):
+    file_path = SCREENSHOTS_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Captura no encontrada")
+    return FileResponse(file_path, media_type="image/png")
 
 
 @app.websocket("/ws/chat")
@@ -247,7 +268,14 @@ async def websocket_chat(websocket: WebSocket):
         pass
     except Exception as e:
         try:
-            await websocket.send_json({"type": "error", "message": str(e)})
+            err_msg = str(e)
+            if "10061" in err_msg or "ConnectError" in err_msg:
+                err_msg = (
+                    "No se pudo conectar con el motor local de Ollama (http://localhost:11434). "
+                    "EDITH está intentando iniciarlo automáticamente en segundo plano. "
+                    "Por favor espera unos segundos y vuelve a enviar tu mensaje."
+                )
+            await websocket.send_json({"type": "error", "message": err_msg})
         except Exception:
             pass
 

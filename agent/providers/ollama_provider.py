@@ -1,11 +1,67 @@
 """Ollama provider with real-time reasoning extraction and tool calling."""
 
 import json
+import os
 import re
+import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
 from typing import List, Dict, Any, Optional, Callable
 import httpx
 
 from .base import BaseLLMProvider, AgentStepResponse, ToolCall
+
+
+def ensure_ollama_running(base_url: str = "http://localhost:11434", timeout: float = 6.0) -> bool:
+    """Verifica si Ollama está respondiendo y, si no, intenta iniciarlo automáticamente en segundo plano."""
+    clean_url = base_url.rstrip("/")
+    try:
+        with httpx.Client(timeout=1.5) as client:
+            res = client.get(f"{clean_url}/api/tags")
+            if res.status_code == 200:
+                return True
+    except Exception:
+        pass
+
+    # Buscar ejecutable de Ollama
+    ollama_cmd = shutil.which("ollama")
+    if not ollama_cmd:
+        local_app = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama.exe"
+        if local_app.exists():
+            ollama_cmd = str(local_app)
+
+    if not ollama_cmd:
+        return False
+
+    creationflags = 0
+    if sys.platform == "win32":
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+
+    try:
+        subprocess.Popen(
+            [ollama_cmd, "serve"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=creationflags
+        )
+    except Exception:
+        return False
+
+    # Esperar hasta que responda
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        time.sleep(0.8)
+        try:
+            with httpx.Client(timeout=1.5) as client:
+                res = client.get(f"{clean_url}/api/tags")
+                if res.status_code == 200:
+                    return True
+        except Exception:
+            continue
+
+    return False
 
 
 class OllamaProvider(BaseLLMProvider):
@@ -16,6 +72,10 @@ class OllamaProvider(BaseLLMProvider):
         self.model = model
 
     def is_available(self) -> tuple[bool, str]:
+        # Si es local, verificar o intentar auto-iniciar
+        if "localhost" in self.base_url or "127.0.0.1" in self.base_url:
+            ensure_ollama_running(self.base_url, timeout=4.0)
+
         try:
             with httpx.Client(timeout=3.0) as client:
                 res = client.get(f"{self.base_url}/api/tags")
@@ -32,8 +92,8 @@ class OllamaProvider(BaseLLMProvider):
                         return True, f"Ollama activo. Nota: el modelo '{self.model}' no se encontró en la lista local ({available_list}). Se intentará ejecutar o puedes cambiarlo con /model."
                     return True, f"Ollama activo con modelo '{self.model}'."
                 return False, f"Ollama respondió con código de estado HTTP {res.status_code}."
-        except Exception as e:
-            return False, f"No se pudo conectar a Ollama en {self.base_url}. Asegúrate de que Ollama esté ejecutándose (`ollama serve`)."
+        except Exception:
+            return False, f"No se pudo conectar a Ollama en {self.base_url}. Asegúrate de abrir la app Ollama o ejecutar 'ollama serve'."
 
     def _convert_tools_for_ollama(self, tools_metadata: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         ollama_tools = []
@@ -127,7 +187,33 @@ class OllamaProvider(BaseLLMProvider):
         in_think_tag = False
 
         with httpx.Client(timeout=180.0) as client:
-            with client.stream("POST", f"{self.base_url}/api/chat", json=payload) as response:
+            response_ctx = None
+            try:
+                response_ctx = client.stream("POST", f"{self.base_url}/api/chat", json=payload)
+                response = response_ctx.__enter__()
+            except (httpx.ConnectError, httpx.NetworkError):
+                if response_ctx:
+                    try:
+                        response_ctx.__exit__(None, None, None)
+                    except Exception:
+                        pass
+                # Intentar auto-iniciar Ollama
+                if ensure_ollama_running(self.base_url, timeout=7.0):
+                    try:
+                        response_ctx = client.stream("POST", f"{self.base_url}/api/chat", json=payload)
+                        response = response_ctx.__enter__()
+                    except Exception:
+                        raise RuntimeError(
+                            "Ollama se está iniciando pero aún no está listo para procesar solicitudes. "
+                            "Por favor espera unos 5 segundos y vuelve a enviar tu mensaje."
+                        )
+                else:
+                    raise RuntimeError(
+                        f"No se pudo conectar a Ollama en {self.base_url}. "
+                        "El servicio local no está activo. Abre la aplicación Ollama en tu laptop o ejecuta 'ollama serve' en tu terminal."
+                    )
+
+            try:
                 if response.status_code != 200:
                     error_body = response.read().decode("utf-8", errors="replace")
                     raise RuntimeError(f"Error de Ollama ({response.status_code}): {error_body}")
@@ -196,6 +282,12 @@ class OllamaProvider(BaseLLMProvider):
                             content_accumulated += delta
                             if on_content_chunk:
                                 on_content_chunk(delta)
+            finally:
+                if response_ctx:
+                    try:
+                        response_ctx.__exit__(None, None, None)
+                    except Exception:
+                        pass
 
         # Si el modelo no usó tool_calls nativos, buscar si produjo un bloque JSON de acción
         if not tool_calls:

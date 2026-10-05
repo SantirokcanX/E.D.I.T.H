@@ -14,6 +14,8 @@ import uvicorn
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from agent.providers.ollama_provider import ensure_ollama_running
+
 PORT = 8000
 SERVER_URL = f"http://127.0.0.1:{PORT}"
 
@@ -24,6 +26,9 @@ def start_server():
 
 
 def main():
+    # 0. Asegurar que Ollama esté iniciado en segundo plano
+    threading.Thread(target=ensure_ollama_running, daemon=True).start()
+
     # 1. Iniciar servidor backend en segundo plano
     server_thread = threading.Thread(target=start_server, daemon=True)
     server_thread.start()

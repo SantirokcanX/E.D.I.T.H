@@ -18,11 +18,19 @@ from ..memory.memory_manager import get_memory_manager
 from ..learning.error_learner import get_error_learner
 
 
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
+
 class AgentCLI:
     """Consola interactiva de EDITH: Compañera de día a día, pensamiento abstracto y código."""
 
     def __init__(self):
-        self.console = Console()
+        self.console = Console(legacy_windows=False)
         self.provider_name = Config.PROVIDER
         self.provider = None
         self.agent: Optional[ReasoningAgent] = None
