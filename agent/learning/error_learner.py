@@ -71,13 +71,31 @@ class ErrorLearner:
         """Devuelve todas las lecciones aprendidas formateadas."""
         return [f"- {item.get('lesson')}" for item in self.learnings if item.get("lesson")]
 
+    def _select_lessons(self, query: str, limit: int) -> List[Dict[str, Any]]:
+        """Prioriza las lecciones más relevantes a la consulta (ML) y completa con las recientes."""
+        recent = self.learnings[-limit:]
+        if not query or len(self.learnings) <= limit:
+            return recent
+        try:
+            from ..ml import MLEngine
+            texts = [f"{l.get('task', '')} {l.get('error', '')} {l.get('lesson', '')}" for l in self.learnings]
+            idx = MLEngine.rank(query, texts, k=limit, min_score=0.12)
+        except Exception:
+            return recent
+        chosen = [self.learnings[i] for i in idx]
+        for item in reversed(self.learnings):  # completar con las más recientes
+            if len(chosen) >= limit:
+                break
+            if item not in chosen:
+                chosen.append(item)
+        return chosen
+
     def get_contextual_rules(self, query: str = "", limit: int = 5) -> str:
         """Genera una directiva para el prompt del sistema con las reglas aprendidas."""
         if not self.learnings:
             return ""
 
-        # Si hay pocas, mostrar las más recientes
-        selected = self.learnings[-limit:]
+        selected = self._select_lessons(query, limit)
         rules = [f"• {item.get('lesson')} (Contexto: {item.get('task')})" for item in selected]
         
         return (

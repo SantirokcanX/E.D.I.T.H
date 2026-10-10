@@ -21,6 +21,11 @@ class Config:
     MAX_ITERATIONS = int(os.getenv("MAX_ITERATIONS", "6"))
     SEARCH_MAX_RESULTS = int(os.getenv("SEARCH_MAX_RESULTS", "5"))
 
+    # Machine Learning (agent/ml)
+    ML_ENABLED = os.getenv("ML_ENABLED", "true").lower().strip() in ("1", "true", "yes", "si", "sí")
+    ML_AUTO_ROUTE = os.getenv("ML_AUTO_ROUTE", "true").lower().strip() in ("1", "true", "yes", "si", "sí")
+    ML_AUTO_THRESHOLD = float(os.getenv("ML_AUTO_THRESHOLD", "0.6"))
+
     @classmethod
     def reload(cls):
         """Recarga la configuración desde el archivo .env."""
@@ -32,3 +37,6 @@ class Config:
         cls.GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
         cls.MAX_ITERATIONS = int(os.getenv("MAX_ITERATIONS", "6"))
         cls.SEARCH_MAX_RESULTS = int(os.getenv("SEARCH_MAX_RESULTS", "5"))
+        cls.ML_ENABLED = os.getenv("ML_ENABLED", "true").lower().strip() in ("1", "true", "yes", "si", "sí")
+        cls.ML_AUTO_ROUTE = os.getenv("ML_AUTO_ROUTE", "true").lower().strip() in ("1", "true", "yes", "si", "sí")
+        cls.ML_AUTO_THRESHOLD = float(os.getenv("ML_AUTO_THRESHOLD", "0.6"))

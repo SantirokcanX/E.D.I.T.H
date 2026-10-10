@@ -2,14 +2,6 @@
 
 import argparse
 import sys
-
-if sys.platform == "win32":
-    try:
-        sys.stdout.reconfigure(encoding="utf-8")
-        sys.stderr.reconfigure(encoding="utf-8")
-    except Exception:
-        pass
-
 import uvicorn
 from agent.cli.ui import AgentCLI
 from agent.config import Config
@@ -49,6 +41,28 @@ def parse_args():
         help="Iniciar directamente en modo Co-Working multi-agente."
     )
     parser.add_argument(
+        "--no-ml",
+        action="store_true",
+        help="Desactivar el subsistema de Machine Learning (enrutador y memoria semántica)."
+    )
+    parser.add_argument(
+        "--ml-train",
+        action="store_true",
+        help="Indexar las sesiones guardadas en data/sessions/ en la memoria semántica y salir."
+    )
+    parser.add_argument(
+        "--ml-status",
+        action="store_true",
+        help="Mostrar el estado del subsistema ML y salir."
+    )
+    parser.add_argument(
+        "--ml-analyze",
+        type=str,
+        default=None,
+        metavar="TEXTO",
+        help="Mostrar qué ruta elegiría el ML y qué recuerdos recuperaría para TEXTO, y salir."
+    )
+    parser.add_argument(
         "--query", "-q",
         type=str,
         default=None,
@@ -63,8 +77,34 @@ def start_ide(port: int = 8000):
     uvicorn.run("ide.server:app", host="127.0.0.1", port=port, log_level="info")
 
 
+def run_ml_tools(args) -> bool:
+    """Atiende las opciones --ml-*. Devuelve True si se ejecutó alguna."""
+    if not (args.ml_train or args.ml_status or args.ml_analyze):
+        return False
+    from agent.ml import get_ml_engine
+
+    engine = get_ml_engine()
+    if args.ml_train:
+        n = engine.train_from_sessions()
+        print(f"[ML] {n} mensajes nuevos indexados desde data/sessions/.")
+    if args.ml_analyze:
+        a = engine.analyze(args.ml_analyze)
+        print(f"[ML] Ruta: {a.route} ({a.confidence:.0%})")
+        for r, p in sorted(a.probs.items(), key=lambda kv: -kv[1]):
+            print(f"      {r:<11}{p:.0%}")
+        print(a.context or "[ML] Sin recuerdos relevantes.")
+    print(f"[ML] Estado: {engine.status()}")
+    return True
+
+
 def main():
     args = parse_args()
+
+    if run_ml_tools(args):
+        return
+
+    if args.no_ml:
+        Config.ML_ENABLED = False
 
     if args.ide:
         start_ide(port=args.port)

@@ -31,7 +31,8 @@ class CoworkingTeam:
     def collaborate(
         self,
         objective: str,
-        on_event: Optional[Callable[[TeamMemberEvent], None]] = None
+        on_event: Optional[Callable[[TeamMemberEvent], None]] = None,
+        context: str = ""
     ) -> Dict[str, Any]:
         """
         Ejecuta el protocolo de co-working en 4 fases interactivas.
@@ -53,6 +54,7 @@ class CoworkingTeam:
         plan = self._call_llm_step(
             edith_plan_prompt,
             f"Objetivo: {objective}\nPor favor define el plan de investigación y qué términos o preguntas clave debe buscar Scout."
+            + (f"\n\nContexto recordado del usuario (úsalo solo si es pertinente):\n{context}" if context else "")
         )
         emit("EDITH", "Líder & Estratega", plan, "thought")
 

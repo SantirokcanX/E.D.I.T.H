@@ -36,6 +36,14 @@
 
 7. **🔓 Sin Filtros Artificiales:**
    - Comunicación directa y sin intermediarios ni censura moral impuesta en el código.
+   - **Regla de Oro** en el prompt de EDITH: sin sermones ni disclaimers de relleno, franqueza total y autonomía para actuar; el único límite es no ayudar a dañar gravemente a terceros.
+
+8. **📈 Machine Learning Integrado (`agent/ml/`):**
+   - **Enrutador online:** clasifica cada consulta (`direct`, `web_search`, `coworking`, `workspace`) y activa Co-Working solo cuando hace falta. Aprende de tus correcciones (`partial_fit`).
+   - **Memoria semántica:** recupera recuerdos relevantes (TF-IDF + coseno) y los inyecta en el prompt, sin GPU ni claves API.
+   - **Lecciones relevantes:** de los errores aprendidos, `ErrorLearner` elige los más parecidos a tu consulta en vez de los 5 más recientes.
+   - **Historial inteligente:** en charlas largas envía al modelo los últimos turnos y solo los turnos antiguos relevantes, para no desbordar el contexto de modelos locales.
+   - Los modelos se guardan en `data/ml/` (ignorado por git). Consola: `/ml [status|auto|train|analyze|fix <ruta>]`. Terminal: `--ml-train`, `--ml-status`, `--ml-analyze "texto"`, `--no-ml`. IDE: botón **🧠 Auto** y panel ML en la pestaña Evolución.
 
 ---
 
@@ -54,6 +62,7 @@ EDITH_proyecto/
 │   └── static/               # Frontend web (index.html, styles.css, app.js)
 ├── agent/
 │   ├── voice/                # Motor de voz neural (VoiceEngine)
+│   ├── ml/                   # Machine Learning: enrutador, memoria semántica, historial inteligente
 │   ├── memory/               # Gestor de persistencia de sesiones (MemoryManager)
 │   ├── learning/             # Sistema de auto-aprendizaje (ErrorLearner)
 │   ├── coworking/            # Orquestador del equipo multi-agente (CoworkingTeam)

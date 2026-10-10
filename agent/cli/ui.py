@@ -17,20 +17,18 @@ from ..voice.voice_engine import get_voice_engine, speak_async
 from ..memory.memory_manager import get_memory_manager
 from ..learning.error_learner import get_error_learner
 
-
-if sys.platform == "win32":
-    try:
-        sys.stdout.reconfigure(encoding="utf-8")
-        sys.stderr.reconfigure(encoding="utf-8")
-    except Exception:
-        pass
+try:  # ML opcional
+    from ..ml import get_ml_engine, ROUTES as ML_ROUTES
+except Exception:  # pragma: no cover
+    get_ml_engine = None
+    ML_ROUTES = []
 
 
 class AgentCLI:
     """Consola interactiva de EDITH: Compañera de día a día, pensamiento abstracto y código."""
 
     def __init__(self):
-        self.console = Console(legacy_windows=False)
+        self.console = Console()
         self.provider_name = Config.PROVIDER
         self.provider = None
         self.agent: Optional[ReasoningAgent] = None
@@ -39,6 +37,14 @@ class AgentCLI:
         self.memory = get_memory_manager()
         self.learner = get_error_learner()
         self.coworking_mode = False
+        self.ml = None
+        self.ml_auto = Config.ML_AUTO_ROUTE
+        self.last_query: Optional[str] = None
+        if get_ml_engine and Config.ML_ENABLED:
+            try:
+                self.ml = get_ml_engine()
+            except Exception as e:
+                self.console.print(f"[yellow][ML] desactivado: {e}[/yellow]")
         self.init_agent()
 
     def init_agent(self, provider_name: Optional[str] = None, model: Optional[str] = None):
@@ -79,11 +85,12 @@ class AgentCLI:
         banner_text.append("  /load <id>                - Continuar una charla anterior\n", style="dim")
         banner_text.append("  /new                      - Iniciar conversación en limpio\n", style="dim")
         banner_text.append("  /learnings                - Ver lecciones aprendidas de errores\n", style="dim")
+        banner_text.append("  /ml [status|auto|train|fix]  - Machine Learning (auto-ruteo y memoria semántica)\n", style="dim")
         banner_text.append("  /help                     - Ayuda detallada | /exit para salir", style="dim")
 
         self.console.print(Panel(banner_text, border_style="cyan", expand=False))
 
-    def run_coworking_query(self, user_query: str):
+    def run_coworking_query(self, user_query: str, context: str = ""):
         self.console.print(Panel(
             "[bold cyan]👥 Iniciando protocolo de Co-Working en Equipo...[/bold cyan]\n"
             "[dim]EDITH (Estratega) ➔ Scout (Investigador Web) ➔ Auditor (Crítico Dialéctico) ➔ EDITH (Síntesis)[/dim]",
@@ -109,7 +116,7 @@ class AgentCLI:
 
         with self.console.status("[bold magenta]Equipo colaborando...", spinner="aesthetic"):
             try:
-                result = self.team.collaborate(user_query, on_event=on_team_event)
+                result = self.team.collaborate(user_query, on_event=on_team_event, context=context)
             except Exception as e:
                 self.console.print(f"[bold red]Error en Co-Working: {str(e)}[/bold red]")
                 return
@@ -249,10 +256,80 @@ class AgentCLI:
             self.console.print(table)
 
     def run_query(self, user_query: str):
-        if self.coworking_mode:
-            self.run_coworking_query(user_query)
+        use_team = self.coworking_mode
+        analysis = None
+        if self.ml:
+            try:
+                analysis = self.ml.analyze(user_query)
+                if (self.ml_auto and not use_team and analysis.route == "coworking"
+                        and analysis.confidence >= Config.ML_AUTO_THRESHOLD):
+                    use_team = True
+                    self.console.print(
+                        f"[dim magenta]🧠 ML: consulta compleja ({analysis.confidence:.0%}) → Co-Working "
+                        f"(corrige con /ml fix direct)[/dim magenta]"
+                    )
+            except Exception:
+                analysis = None
+
+        self.last_query = user_query
+        if use_team:
+            self.run_coworking_query(user_query, context=analysis.context if analysis else "")
         else:
             self.run_standard_query(user_query)
+
+        if self.ml:
+            self.ml.log_query(user_query, analysis.route if analysis else None, use_team)
+            if use_team:  # el modo equipo no pasa por ReasoningAgent: guardamos el recuerdo aquí
+                self.ml.remember_turn(user_query)
+
+    def handle_ml_command(self, arg: str):
+        if not self.ml:
+            self.console.print("[yellow]El subsistema ML no está disponible (¿falta scikit-learn?).[/yellow]")
+            return
+        parts = arg.split(maxsplit=1)
+        sub = parts[0].lower() if parts else "status"
+        rest = parts[1].strip() if len(parts) > 1 else ""
+
+        if sub == "status":
+            st = self.ml.status()
+            self.console.print(
+                f"[bold cyan]🧠 ML[/bold cyan]  recuerdos: {st['recuerdos']} | "
+                f"correcciones aprendidas: {st['actualizaciones_router']} | "
+                f"auto-ruteo: {'ON' if self.ml_auto else 'OFF'} (umbral {Config.ML_AUTO_THRESHOLD:.0%})"
+            )
+        elif sub == "auto":
+            if rest.lower() in ("on", "off"):
+                self.ml_auto = rest.lower() == "on"
+            else:
+                self.ml_auto = not self.ml_auto
+            self.console.print(f"Auto-ruteo ML: {'[green]ON[/green]' if self.ml_auto else '[dim]OFF[/dim]'}")
+        elif sub == "train":
+            n = self.ml.train_from_sessions()
+            self.console.print(f"[green]{n} mensajes nuevos indexados desde tus sesiones.[/green]")
+        elif sub == "analyze":
+            text = rest or self.last_query
+            if not text:
+                self.console.print("[red]Uso: /ml analyze <texto>[/red]")
+                return
+            a = self.ml.analyze(text)
+            table = Table(title=f"Análisis ML: {text[:50]}", border_style="dim cyan")
+            table.add_column("Ruta", style="bold cyan")
+            table.add_column("Probabilidad", style="yellow")
+            for r, p in sorted(a.probs.items(), key=lambda kv: -kv[1]):
+                table.add_row(r, f"{p:.0%}")
+            self.console.print(table)
+            self.console.print(a.context or "[dim]Sin recuerdos relevantes.[/dim]")
+        elif sub == "fix":
+            route = rest.lower()
+            if route not in ML_ROUTES:
+                self.console.print(f"[red]Uso: /ml fix <{'|'.join(ML_ROUTES)}> (corrige la última consulta)[/red]")
+            elif not self.last_query:
+                self.console.print("[red]Aún no hay una consulta que corregir.[/red]")
+            else:
+                self.ml.feedback(self.last_query, route)
+                self.console.print(f"[green]Aprendido: «{self.last_query[:50]}» → {route}[/green]")
+        else:
+            self.console.print("[red]Uso: /ml [status|auto [on|off]|train|analyze <texto>|fix <ruta>][/red]")
 
     def start_repl(self):
         self.print_banner()
@@ -331,6 +408,10 @@ class AgentCLI:
                         self.print_learnings()
                         continue
 
+                    elif cmd == "/ml":
+                        self.handle_ml_command(arg)
+                        continue
+
                     elif cmd == "/clear":
                         self.agent.reset_history()
                         self.console.print("[green]Historial de charla reiniciado.[/green]")
@@ -394,6 +475,7 @@ class AgentCLI:
         table.add_row("/load <id>", "Recupera una charla anterior")
         table.add_row("/new", "Inicia una conversación limpia preservando recuerdos generales")
         table.add_row("/learnings", "Muestra las lecciones aprendidas de errores previos")
+        table.add_row("/ml [status|auto|train|analyze|fix <ruta>]", "Machine Learning: estado, auto-ruteo, entrenar con tus sesiones, corregir la última ruta")
         table.add_row("/provider <ollama|gemini>", "Cambia entre modelos locales y en la nube")
         table.add_row("/model <nombre>", "Define el modelo a usar")
         table.add_row("/clear", "Limpia la conversación actual")

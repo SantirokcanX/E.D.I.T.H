@@ -1,6 +1,7 @@
 // EDITH Desktop Companion, System Control, Diagrams & Wake Word Controller
 let ws = null;
-let currentMode = "standard"; // 'standard' or 'coworking'
+let currentMode = "standard"; // 'standard', 'coworking' o 'auto' (decide el ML)
+let lastMlQuery = "";
 let voiceEnabled = true;
 let activeFilePath = "notas_del_dia.md";
 let recognition = null;
@@ -31,13 +32,13 @@ function initMermaid() {
       theme: 'dark',
       themeVariables: {
         darkMode: true,
-        background: '#0c101c',
-        primaryColor: '#1e293b',
-        primaryTextColor: '#f8fafc',
-        primaryBorderColor: '#38bdf8',
-        lineColor: '#38bdf8',
-        secondaryColor: '#334155',
-        tertiaryColor: '#0f172a'
+        background: '#0a0a0f',
+        primaryColor: '#20202b',
+        primaryTextColor: '#ece9f5',
+        primaryBorderColor: '#9b5cf6',
+        lineColor: '#9b5cf6',
+        secondaryColor: '#17171f',
+        tertiaryColor: '#2ecc71'
       }
     });
   }
@@ -171,7 +172,8 @@ function handleWsMessage(data) {
 
   switch (data.type) {
     case "iteration_start":
-      thoughtIndicator.innerText = `Razonando paso ${data.iteration}...`;
+      document.getElementById("thoughtLine").style.display = "flex";
+      thoughtIndicator.innerText = `Razonando paso ${data.iteration}`;
       thoughtIndicator.classList.add("active");
       break;
 
@@ -186,6 +188,10 @@ function handleWsMessage(data) {
 
     case "team_event":
       handleTeamEvent(data);
+      break;
+
+    case "ml_route":
+      showMlRoute(data);
       break;
 
     case "final_answer":
@@ -532,6 +538,58 @@ async function loadLearnings() {
   } catch (e) {}
 }
 
+// 8b. Machine Learning
+const ML_ROUTE_LABELS = {
+  direct: "Directo", web_search: "Búsqueda web", coworking: "Equipo (Co-Working)", workspace: "Archivo / código"
+};
+
+async function loadMlStatus() {
+  const box = document.getElementById("mlStats");
+  if (!box) return;
+  try {
+    const st = await (await fetch("/api/ml/status")).json();
+    if (!st.enabled) { box.innerText = "ML desactivado (instala scikit-learn)."; return; }
+    box.innerText = `Recuerdos: ${st.recuerdos} · Correcciones aprendidas: ${st.actualizaciones_router}`;
+  } catch (e) { box.innerText = "No se pudo leer el estado del ML."; }
+}
+
+function showMlRoute(data) {
+  const label = ML_ROUTE_LABELS[data.route] || data.route;
+  document.getElementById("mlLast").innerText =
+    `Última consulta → ${label} (${Math.round(data.confidence * 100)}%). Modo usado: ${data.mode === "coworking" ? "equipo" : "directo"}.`;
+  document.getElementById("mlFix").style.display = "flex";
+  document.getElementById("coworkingMonitor").style.display = data.mode === "coworking" ? "grid" : "none";
+}
+
+function setupMlListeners() {
+  const refresh = document.getElementById("btnRefreshMl");
+  if (!refresh) return;
+  refresh.addEventListener("click", loadMlStatus);
+  document.getElementById("btnMlTrain").addEventListener("click", async () => {
+    try {
+      const r = await (await fetch("/api/ml/train", { method: "POST" })).json();
+      document.getElementById("mlLast").innerText = `${r.indexed} mensajes nuevos indexados.`;
+    } catch (e) {}
+    loadMlStatus();
+  });
+  document.querySelectorAll("#mlFix button").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      if (!lastMlQuery) return;
+      try {
+        await fetch("/api/ml/feedback", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: lastMlQuery, route: btn.dataset.route })
+        });
+        document.getElementById("mlLast").innerText = `Aprendido: esa consulta va a «${ML_ROUTE_LABELS[btn.dataset.route]}».`;
+        document.getElementById("mlFix").style.display = "none";
+      } catch (e) {}
+      loadMlStatus();
+    });
+  });
+  loadMlStatus();
+}
+
 // 9. Event Listeners
 function setupEventListeners() {
   const form = document.getElementById("chatForm");
@@ -543,9 +601,13 @@ function setupEventListeners() {
     if (!text || !ws) return;
 
     appendUserMessage(text);
+    lastMlQuery = text;
     input.value = "";
+    input.style.height = "auto";
 
     document.getElementById("thoughtContent").innerText = "";
+    document.getElementById("thoughtContent").style.display = "none";
+    document.getElementById("btnToggleThought").innerText = "Ver pasos";
     document.getElementById("thoughtIndicator").innerText = "Razonando...";
     document.getElementById("thoughtIndicator").classList.add("active");
 
@@ -562,6 +624,11 @@ function setupEventListeners() {
       e.preventDefault();
       form.dispatchEvent(new Event("submit"));
     }
+  });
+
+  input.addEventListener("input", () => {
+    input.style.height = "auto";
+    input.style.height = Math.min(input.scrollHeight, 160) + "px";
   });
 
   // Botón Micrófono
@@ -630,19 +697,19 @@ function setupEventListeners() {
   const btnCoworking = document.getElementById("btnModeCoworking");
   const monitor = document.getElementById("coworkingMonitor");
 
-  btnStandard.addEventListener("click", () => {
-    currentMode = "standard";
-    btnStandard.classList.add("active");
-    btnCoworking.classList.remove("active");
-    monitor.style.display = "none";
-  });
+  const btnAuto = document.getElementById("btnModeAuto");
+  const modeButtons = [btnStandard, btnCoworking, btnAuto];
+  const setMode = (mode, activeBtn, showMonitor) => {
+    currentMode = mode;
+    modeButtons.forEach(b => b.classList.remove("active"));
+    activeBtn.classList.add("active");
+    monitor.style.display = showMonitor ? "grid" : "none";
+  };
 
-  btnCoworking.addEventListener("click", () => {
-    currentMode = "coworking";
-    btnCoworking.classList.add("active");
-    btnStandard.classList.remove("active");
-    monitor.style.display = "grid";
-  });
+  btnStandard.addEventListener("click", () => setMode("standard", btnStandard, false));
+  btnCoworking.addEventListener("click", () => setMode("coworking", btnCoworking, true));
+  btnAuto.addEventListener("click", () => setMode("auto", btnAuto, false));
+  setupMlListeners();
 
   document.getElementById("btnSaveFile").addEventListener("click", saveCurrentFile);
   document.getElementById("btnRefreshSystem").addEventListener("click", loadSystemStatus);
@@ -660,7 +727,7 @@ function setupEventListeners() {
     a.click();
   });
 
-  // Sidebar Tabs
+  // Pestañas dentro del panel lateral (Archivos / Editor / Laptop / Evolución)
   document.querySelectorAll(".tab-btn").forEach(btn => {
     btn.addEventListener("click", () => {
       document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
@@ -668,6 +735,83 @@ function setupEventListeners() {
       btn.classList.add("active");
       document.getElementById(btn.dataset.tab).classList.add("active");
     });
+  });
+
+  setupDrawer();
+  setupSidebar();
+  setupThoughtToggle();
+}
+
+// 10. Panel lateral (drawer): Archivos, Editor, Laptop, Evolución
+function openDrawerTab(tabId) {
+  document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+  document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
+  document.querySelector(`.tab-btn[data-tab="${tabId}"]`)?.classList.add("active");
+  document.getElementById(tabId)?.classList.add("active");
+  document.getElementById("detailsDrawer").classList.add("open");
+  document.getElementById("drawerBackdrop").classList.add("visible");
+}
+
+function closeDrawer() {
+  document.getElementById("detailsDrawer").classList.remove("open");
+  document.getElementById("drawerBackdrop").classList.remove("visible");
+}
+
+function setupDrawer() {
+  document.querySelectorAll(".tool-btn[data-tab]").forEach(btn => {
+    btn.addEventListener("click", () => openDrawerTab(btn.dataset.tab));
+  });
+  document.getElementById("btnCloseDrawer").addEventListener("click", closeDrawer);
+  document.getElementById("drawerBackdrop").addEventListener("click", () => {
+    closeDrawer();
+    closeMobileSidebar();
+  });
+}
+
+// 11. Barra lateral: colapsar en escritorio, off-canvas en móvil
+function setupSidebar() {
+  const sidebar = document.getElementById("sidebar");
+
+  document.getElementById("btnCollapseSidebar").addEventListener("click", () => {
+    sidebar.classList.toggle("collapsed");
+  });
+
+  const btnOpenMobile = document.getElementById("btnSidebarOpenMobile");
+  if (btnOpenMobile) {
+    btnOpenMobile.addEventListener("click", () => {
+      sidebar.classList.add("mobile-open");
+      document.getElementById("drawerBackdrop").classList.add("visible");
+    });
+  }
+
+  // "Nueva conversación": limpia el hilo visible (no borra el historial guardado)
+  document.getElementById("btnNewSession").addEventListener("click", () => {
+    const container = document.getElementById("chatMessages");
+    container.innerHTML = `
+      <div class="message assistant-msg">
+        <div class="msg-header"><span class="avatar">👓</span><span class="name">EDITH</span></div>
+        <div class="msg-body"><p>Lista para un nuevo tema. ¿En qué te ayudo?</p></div>
+      </div>
+    `;
+    closeMobileSidebar();
+  });
+}
+
+function closeMobileSidebar() {
+  document.getElementById("sidebar").classList.remove("mobile-open");
+  if (!document.getElementById("detailsDrawer").classList.contains("open")) {
+    document.getElementById("drawerBackdrop").classList.remove("visible");
+  }
+}
+
+// 12. Mostrar/ocultar el detalle del razonamiento paso a paso
+function setupThoughtToggle() {
+  const btn = document.getElementById("btnToggleThought");
+  const content = document.getElementById("thoughtContent");
+  btn.addEventListener("click", () => {
+    const visible = content.style.display !== "none";
+    content.style.display = visible ? "none" : "block";
+    btn.innerText = visible ? "Ver pasos" : "Ocultar";
   });
 }
 

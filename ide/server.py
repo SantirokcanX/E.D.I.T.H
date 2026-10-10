@@ -19,7 +19,12 @@ from agent.memory.memory_manager import get_memory_manager
 from agent.learning.error_learner import get_error_learner
 from agent.tools.workspace_tools import WORKSPACE_DIR, save_to_workspace, read_workspace_file, list_workspace_files
 from agent.tools.system_tools import get_system_status, open_application, run_system_command, control_system_volume
-from agent.tools.screen_tools import capture_screen, analyze_screen, SCREENSHOTS_DIR
+
+try:  # ML opcional
+    from agent.ml import get_ml_engine, ROUTES as ML_ROUTES
+except Exception:  # pragma: no cover
+    get_ml_engine = None
+    ML_ROUTES = []
 
 app = FastAPI(title="EDITH Studio IDE & Companion Hub")
 
@@ -29,19 +34,19 @@ STATIC_DIR.mkdir(parents=True, exist_ok=True)
 AUDIO_DIR = BASE_DIR / "data" / "audio"
 AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 
-import threading
-from agent.providers.ollama_provider import ensure_ollama_running
-
 # Instancia global del agente y equipo
-if Config.PROVIDER == "ollama":
-    threading.Thread(target=ensure_ollama_running, daemon=True).start()
-
 provider = get_provider()
 edith_agent = ReasoningAgent(provider=provider, max_iterations=Config.MAX_ITERATIONS)
 coworking_team = CoworkingTeam(provider=provider)
 voice_engine = get_voice_engine()
 memory_manager = get_memory_manager()
 error_learner = get_error_learner()
+ml_engine = None
+if get_ml_engine and Config.ML_ENABLED:
+    try:
+        ml_engine = get_ml_engine()
+    except Exception as exc:
+        print(f"[ML] desactivado: {exc}")
 
 
 class WorkspaceFileRequest(BaseModel):
@@ -51,6 +56,15 @@ class WorkspaceFileRequest(BaseModel):
 
 class VoiceSelectRequest(BaseModel):
     voice_key: str
+
+
+class MLAnalyzeRequest(BaseModel):
+    text: str
+
+
+class MLFeedbackRequest(BaseModel):
+    text: str
+    route: str
 
 
 class SystemAppRequest(BaseModel):
@@ -76,6 +90,40 @@ def api_system_app(req: SystemAppRequest):
 def api_system_volume(req: SystemVolumeRequest):
     res = control_system_volume(req.action)
     return {"result": res}
+
+
+@app.get("/api/ml/status")
+def api_ml_status():
+    if not ml_engine:
+        return {"enabled": False}
+    return {"enabled": True, "auto_route": Config.ML_AUTO_ROUTE,
+            "threshold": Config.ML_AUTO_THRESHOLD, **ml_engine.status()}
+
+
+@app.post("/api/ml/analyze")
+def api_ml_analyze(req: MLAnalyzeRequest):
+    if not ml_engine:
+        raise HTTPException(status_code=503, detail="ML desactivado")
+    a = ml_engine.analyze(req.text)
+    return {"route": a.route, "confidence": a.confidence, "probs": a.probs,
+            "memories": [{"text": m["text"], "score": m["score"]} for m in a.memories]}
+
+
+@app.post("/api/ml/feedback")
+def api_ml_feedback(req: MLFeedbackRequest):
+    if not ml_engine:
+        raise HTTPException(status_code=503, detail="ML desactivado")
+    if req.route not in ML_ROUTES:
+        raise HTTPException(status_code=400, detail=f"Ruta inválida. Opciones: {ML_ROUTES}")
+    ml_engine.feedback(req.text, req.route)
+    return {"status": "ok"}
+
+
+@app.post("/api/ml/train")
+def api_ml_train():
+    if not ml_engine:
+        raise HTTPException(status_code=503, detail="ML desactivado")
+    return {"indexed": ml_engine.train_from_sessions(), **ml_engine.status()}
 
 
 @app.get("/api/status")
@@ -140,20 +188,6 @@ def api_get_audio(filename: str):
     return FileResponse(file_path, media_type="audio/mpeg")
 
 
-@app.post("/api/screen/capture")
-def api_capture_screen():
-    res = capture_screen(area="full")
-    return res
-
-
-@app.get("/api/workspace/screenshot/{filename}")
-def api_get_screenshot(filename: str):
-    file_path = SCREENSHOTS_DIR / filename
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Captura no encontrada")
-    return FileResponse(file_path, media_type="image/png")
-
-
 @app.websocket("/ws/chat")
 async def websocket_chat(websocket: WebSocket):
     await websocket.accept()
@@ -171,6 +205,29 @@ async def websocket_chat(websocket: WebSocket):
 
                 if not user_prompt:
                     continue
+
+                ml_analysis = None
+                if ml_engine:
+                    try:
+                        ml_analysis = ml_engine.analyze(user_prompt)
+                        if mode == "auto":  # el ML decide entre chat directo y equipo
+                            mode = ("coworking"
+                                    if ml_analysis.route == "coworking"
+                                    and ml_analysis.confidence >= Config.ML_AUTO_THRESHOLD
+                                    else "standard")
+                            await websocket.send_json({
+                                "type": "ml_route",
+                                "route": ml_analysis.route,
+                                "confidence": round(ml_analysis.confidence, 3),
+                                "mode": mode
+                            })
+                    except Exception:
+                        ml_analysis = None
+                if mode == "auto":
+                    mode = "standard"
+                if ml_engine:
+                    ml_engine.log_query(user_prompt, ml_analysis.route if ml_analysis else None,
+                                        mode == "coworking")
 
                 if mode == "coworking":
                     await websocket.send_json({
@@ -194,8 +251,14 @@ async def websocket_chat(websocket: WebSocket):
 
                     result = await loop.run_in_executor(
                         None,
-                        lambda: coworking_team.collaborate(user_prompt, on_event=on_team_event)
+                        lambda: coworking_team.collaborate(
+                            user_prompt,
+                            on_event=on_team_event,
+                            context=ml_analysis.context if ml_analysis else ""
+                        )
                     )
+                    if ml_engine:
+                        ml_engine.remember_turn(user_prompt)
 
                     audio_url = None
                     if speak_response and voice_engine.enabled:
@@ -268,14 +331,7 @@ async def websocket_chat(websocket: WebSocket):
         pass
     except Exception as e:
         try:
-            err_msg = str(e)
-            if "10061" in err_msg or "ConnectError" in err_msg:
-                err_msg = (
-                    "No se pudo conectar con el motor local de Ollama (http://localhost:11434). "
-                    "EDITH está intentando iniciarlo automáticamente en segundo plano. "
-                    "Por favor espera unos segundos y vuelve a enviar tu mensaje."
-                )
-            await websocket.send_json({"type": "error", "message": err_msg})
+            await websocket.send_json({"type": "error", "message": str(e)})
         except Exception:
             pass
 
