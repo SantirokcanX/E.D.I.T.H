@@ -1,14 +1,19 @@
 """Obsidian vault tools: EDITH's external memory and tactical notebook (Fase 2).
 
 Trabaja directamente sobre los archivos .md de la bóveda, así que funciona aunque
-Obsidian esté cerrado y no necesita ningún plugin ni API key.
+Obsidian esté cerrado y no necesita ningún plugin. Si el plugin "Local REST API" está
+activo en la bóveda, además empuja cada cambio a Obsidian en caliente.
 """
 
 import json
 import re
+import time
+import urllib.parse
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
+
+import httpx
 
 from ..config import Config
 
@@ -20,6 +25,8 @@ VAULT_FOLDERS = [
     "04 - Memoria EDITH",
 ]
 DIARY_FOLDER = "01 - Diario"
+
+_api_down_until = 0.0  # pausa los reintentos al plugin Local REST API si Obsidian está cerrado
 
 _INVALID_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
@@ -34,6 +41,45 @@ def ensure_vault_structure() -> Path:
     for folder in VAULT_FOLDERS:
         (vault / folder).mkdir(parents=True, exist_ok=True)
     return vault
+
+
+def _api_credentials() -> Tuple[Optional[str], int]:
+    """Clave y puerto HTTP del plugin Local REST API de la bóveda (si está configurado)."""
+    cfg = get_vault_path() / ".obsidian" / "plugins" / "obsidian-local-rest-api" / "data.json"
+    try:
+        data = json.loads(cfg.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None, 27123
+    if not data.get("enableInsecureServer", True):
+        return None, 27123
+    return data.get("apiKey"), int(data.get("insecurePort", 27123))
+
+
+def _push_to_obsidian(path: Path, text: str) -> bool:
+    """Sincronización en caliente con Obsidian abierto (mejor esfuerzo, nunca bloquea)."""
+    global _api_down_until
+    if time.monotonic() < _api_down_until:
+        return False
+    api_key, port = _api_credentials()
+    if not api_key:
+        return False
+    rel = str(path.relative_to(get_vault_path())).replace("\\", "/")
+    url = f"http://127.0.0.1:{port}/vault/{urllib.parse.quote(rel)}"
+    try:
+        res = httpx.put(url, content=text.encode("utf-8"), timeout=httpx.Timeout(1.5, connect=0.3),
+                        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "text/markdown"})
+        return res.status_code in (200, 204)
+    except Exception:
+        # Obsidian cerrado: no volver a esperar la conexión en cada escritura
+        _api_down_until = time.monotonic() + 30
+        return False
+
+
+def _write_note(path: Path, text: str) -> bool:
+    """Escribe la nota en disco y la empuja a Obsidian si está abierto. Devuelve si hubo sync en vivo."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return _push_to_obsidian(path, text)
 
 
 def _safe_name(title: str) -> str:
@@ -92,8 +138,8 @@ def create_note(title: str, content: str, folder: str = "", tags: Optional[List[
     if isinstance(tags, str):
         tags = [t for t in re.split(r"[,\s]+", tags) if t]
     body = content if content.lstrip().startswith("---") else _frontmatter(tags or ["edith"]) + content
-    path.write_text(body.rstrip() + "\n", encoding="utf-8")
-    return {"status": "creada", "note": str(path.relative_to(vault)).replace("\\", "/")}
+    live = _write_note(path, body.rstrip() + "\n")
+    return {"status": "creada", "note": str(path.relative_to(vault)).replace("\\", "/"), "api_synced": live}
 
 
 def append_note(title: str, content: str) -> Dict[str, Any]:
@@ -109,8 +155,8 @@ def _append_to(path: Path, content: str) -> Dict[str, Any]:
     vault = get_vault_path()
     existing = path.read_text(encoding="utf-8")
     sep = "" if existing.endswith("\n") else "\n"
-    path.write_text(existing + sep + "\n" + content.rstrip() + "\n", encoding="utf-8")
-    return {"status": "actualizada", "note": str(path.relative_to(vault)).replace("\\", "/")}
+    live = _write_note(path, existing + sep + "\n" + content.rstrip() + "\n")
+    return {"status": "actualizada", "note": str(path.relative_to(vault)).replace("\\", "/"), "api_synced": live}
 
 
 def read_note(title: str) -> Dict[str, Any]:
@@ -120,6 +166,49 @@ def read_note(title: str) -> Dict[str, Any]:
         return {"error": f"No encontré la nota '{title}' en la bóveda."}
     text = path.read_text(encoding="utf-8", errors="replace")
     return {"note": str(path.relative_to(vault)).replace("\\", "/"), "content": text[:12000]}
+
+
+def list_notes(folder: str = "") -> List[Dict[str, Any]]:
+    """Lista las notas de la bóveda (o de una carpeta), las más recientes primero."""
+    vault = get_vault_path()
+    base = _resolve("/".join(_safe_name(p) for p in re.split(r"[\\/]", folder or "") if p.strip(" ."))) if folder else vault
+    if not base.exists():
+        return []
+    notes = []
+    for p in base.rglob("*.md"):
+        if ".obsidian" in p.parts or ".trash" in p.parts:
+            continue
+        st = p.stat()
+        notes.append({"name": p.stem, "path": str(p.relative_to(vault)).replace("\\", "/"),
+                      "size": st.st_size, "modified": datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M")})
+    notes.sort(key=lambda n: n["modified"], reverse=True)
+    return notes[:200]
+
+
+# --- Compatibilidad con la primera versión de la integración (nombres de herramienta antiguos) ---
+def create_obsidian_note(filename: str, content: str, folder: str = "") -> Dict[str, Any]:
+    """Versión anterior: crea o SOBRESCRIBE la nota."""
+    return create_note(filename, content, folder=folder, overwrite=True)
+
+
+def append_to_obsidian_note(filename: str, content: str, folder: str = "") -> Dict[str, Any]:
+    path = _note_path(filename, folder)
+    if path.exists():
+        ensure_vault_structure()
+        return _append_to(path, content)
+    return append_note(filename, content) if not folder else create_note(filename, content, folder=folder)
+
+
+def read_obsidian_note(filename: str, folder: str = "") -> Dict[str, Any]:
+    path = _note_path(filename, folder)
+    if folder and path.exists():
+        text = path.read_text(encoding="utf-8", errors="replace")
+        return {"note": str(path.relative_to(get_vault_path())).replace("\\", "/"), "content": text[:12000]}
+    return read_note(filename)
+
+
+def list_obsidian_notes(folder: str = "") -> List[Dict[str, Any]]:
+    return list_notes(folder)
 
 
 def search_vault(query: str, max_results: int = 8) -> List[Dict[str, Any]]:
@@ -201,7 +290,7 @@ def sync_edith_session(session_id: Optional[str] = None) -> Dict[str, Any]:
                     old.unlink()
             except OSError:
                 pass
-    path.write_text(session_to_markdown(session) + "\n", encoding="utf-8")
+    _write_note(path, session_to_markdown(session) + "\n")
     return {"status": "sincronizada", "note": str(path.relative_to(vault)).replace("\\", "/")}
 
 
@@ -248,6 +337,15 @@ OBSIDIAN_TOOLS_METADATA = [
             "type": "object",
             "properties": {"query": {"type": "string", "description": "Palabras a buscar."}},
             "required": ["query"]
+        }
+    },
+    {
+        "name": "obsidian_list_notes",
+        "description": "Lista las notas de la bóveda de Obsidian (opcionalmente de una carpeta), las más recientes primero.",
+        "parameters": {
+            "type": "object",
+            "properties": {"folder": {"type": "string", "description": "Carpeta opcional, p. ej. '01 - Diario'."}},
+            "required": []
         }
     },
     {

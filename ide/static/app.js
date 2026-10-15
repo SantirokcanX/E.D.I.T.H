@@ -239,7 +239,7 @@ function appendStreamingChunk(chunk) {
     streamingEl = document.createElement("div");
     streamingEl.className = "message assistant-msg streaming-msg";
     streamingEl.innerHTML = `
-      <div class="msg-header"><span class="avatar">👓</span><span class="name">EDITH</span><span class="time">escribiendo...</span></div>
+      <div class="msg-header"><img class="avatar" src="logo.png" alt="EDITH"><span class="name">EDITH</span><span class="time">escribiendo...</span></div>
       <div class="msg-body"></div>
     `;
     container.appendChild(streamingEl);
@@ -293,7 +293,7 @@ function appendAssistantMessage(markdownContent, sources = []) {
   const parsedBody = marked.parse(markdownContent || "");
   msgEl.innerHTML = `
     <div class="msg-header">
-      <span class="avatar">👓</span>
+      <img class="avatar" src="logo.png" alt="EDITH">
       <span class="name">EDITH</span>
       <span class="time">Ahora</span>
     </div>
@@ -349,13 +349,13 @@ function handleTeamEvent(data) {
   item.className = "message assistant-msg";
   item.style.borderLeft = "3px solid #a855f7";
   
-  let icon = "👓";
-  if (data.member === "Scout") icon = "🕵️";
-  if (data.member === "Auditor") icon = "🧐";
+  let avatarHtml = `<img class="avatar" src="logo.png" alt="EDITH">`;
+  if (data.member === "Scout") avatarHtml = `<span class="avatar">🕵️</span>`;
+  if (data.member === "Auditor") avatarHtml = `<span class="avatar">🧐</span>`;
 
   item.innerHTML = `
     <div class="msg-header">
-      <span class="avatar">${icon}</span>
+      ${avatarHtml}
       <span class="name">${data.member} (${data.role})</span>
     </div>
     <div class="msg-body">
@@ -691,7 +691,7 @@ function showWelcomeMessage() {
   const container = document.getElementById("chatMessages");
   container.innerHTML = `
     <div class="message assistant-msg">
-      <div class="msg-header"><span class="avatar">👓</span><span class="name">EDITH</span></div>
+      <div class="msg-header"><img class="avatar" src="logo.png" alt="EDITH"><span class="name">EDITH</span></div>
       <div class="msg-body"><p>Lista para un nuevo tema. ¿En qué te ayudo?</p></div>
     </div>
   `;

@@ -116,7 +116,7 @@ select, textarea, input { font-family: var(--font-main); color: inherit; }
   display: flex; align-items: center; gap: 8px;
   padding: 4px 4px 8px;
 }
-.brand-icon { font-size: 20px; }
+.brand-icon { width: 24px; height: 25px; object-fit: contain; flex-shrink: 0; }
 .brand-name { font-weight: 700; font-size: 15.5px; letter-spacing: 0.02em; flex: 1; }
 .sidebar-collapse { margin-left: auto; transition: transform 0.18s ease; }
 
@@ -385,7 +385,12 @@ select, textarea, input { font-family: var(--font-main); color: inherit; }
 }
 .team-chip em { font-style: normal; font-weight: 400; color: var(--text-muted); }
 .team-chip.speaking { border-color: var(--green); color: var(--green); background: var(--green-dim); }
-.chip-avatar { font-size: 13px; }
+.chip-avatar {
+  width: 14px; height: 15px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+.chip-avatar:not(img) { font-size: 13px; }
 
 .chat-messages {
   flex: 1;
@@ -417,7 +422,12 @@ select, textarea, input { font-family: var(--font-main); color: inherit; }
   display: flex; align-items: center; gap: 7px;
   margin-bottom: 4px;
 }
-.message.assistant-msg .avatar { font-size: 15px; }
+.message.assistant-msg .avatar {
+  width: 18px; height: 19px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+.message.assistant-msg .avatar:not(img) { font-size: 15px; }
 .message.assistant-msg .name { font-size: 12.5px; font-weight: 700; color: var(--text); }
 .message.assistant-msg .time { font-size: 11px; color: var(--text-muted); }
 .message.assistant-msg .msg-body {

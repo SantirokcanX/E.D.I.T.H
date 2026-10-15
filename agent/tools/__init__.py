@@ -22,6 +22,11 @@ from .obsidian_tools import (
     read_note as obsidian_read_note,
     search_vault as obsidian_search,
     sync_edith_session as obsidian_sync_session,
+    list_notes as obsidian_list_notes,
+    create_obsidian_note,
+    append_to_obsidian_note,
+    read_obsidian_note,
+    list_obsidian_notes,
     OBSIDIAN_TOOLS_METADATA
 )
 from .clipboard_tools import read_clipboard, write_clipboard, CLIPBOARD_TOOLS_METADATA
@@ -92,6 +97,11 @@ __all__ = [
     "obsidian_read_note",
     "obsidian_search",
     "obsidian_sync_session",
+    "obsidian_list_notes",
+    "create_obsidian_note",
+    "append_to_obsidian_note",
+    "read_obsidian_note",
+    "list_obsidian_notes",
     "read_clipboard",
     "write_clipboard",
     "OBSIDIAN_TOOLS_METADATA",

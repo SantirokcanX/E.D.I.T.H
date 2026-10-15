@@ -24,6 +24,11 @@ from ..tools import (
     obsidian_read_note,
     obsidian_search,
     obsidian_sync_session,
+    obsidian_list_notes,
+    create_obsidian_note,
+    append_to_obsidian_note,
+    read_obsidian_note,
+    list_obsidian_notes,
     read_clipboard,
     write_clipboard,
     ALL_TOOLS_METADATA
@@ -85,7 +90,7 @@ TUS CAPACIDADES CLAVE:
    - Tienes acceso en tiempo real a `web_search` y `read_web_page` para investigar cualquier tema en internet.
 
 5. BÓVEDA DE OBSIDIAN (MEMORIA EXTERNA) Y PORTAPAPELES:
-   - La bóveda de Obsidian del usuario es tu cuaderno táctico: `obsidian_search` y `obsidian_read_note` para consultar lo que ya sabe, `obsidian_create_note` / `obsidian_append_note` para guardar ideas, resúmenes y planes (usa [[wikilinks]] entre notas), y `obsidian_sync_session` para archivar la conversación actual en su diario.
+   - La bóveda de Obsidian del usuario es tu cuaderno táctico: `obsidian_search`, `obsidian_list_notes` y `obsidian_read_note` para consultar lo que ya sabe, `obsidian_create_note` / `obsidian_append_note` para guardar ideas, resúmenes y planes (usa [[wikilinks]] entre notas), y `obsidian_sync_session` para archivar la conversación actual en su diario.
    - `read_clipboard` lee lo que el usuario copió con Ctrl+C ("explica lo que copié"); `write_clipboard` le deja un texto listo para pegar.
 
 REGLA DE ORO: HONESTIDAD, AUTONOMÍA Y LEALTAD AL USUARIO:
@@ -280,6 +285,24 @@ class ReasoningAgent:
                 # Guardar primero el turno en curso para que la nota incluya lo último
                 self.memory.save_session_turn(self.conversation_history)
                 return obsidian_sync_session(self.memory.current_session_id)
+
+            elif tool_name == "obsidian_list_notes":
+                return obsidian_list_notes(folder=args.get("folder", ""))
+
+            # Nombres de la primera versión de la integración con Obsidian (por compatibilidad)
+            elif tool_name == "create_obsidian_note":
+                return create_obsidian_note(filename=args.get("filename", ""), content=args.get("content", ""),
+                                            folder=args.get("folder", ""))
+
+            elif tool_name == "append_to_obsidian_note":
+                return append_to_obsidian_note(filename=args.get("filename", ""), content=args.get("content", ""),
+                                               folder=args.get("folder", ""))
+
+            elif tool_name == "read_obsidian_note":
+                return read_obsidian_note(filename=args.get("filename", ""), folder=args.get("folder", ""))
+
+            elif tool_name == "list_obsidian_notes":
+                return list_obsidian_notes(folder=args.get("folder", ""))
 
             elif tool_name == "read_clipboard":
                 return read_clipboard()
