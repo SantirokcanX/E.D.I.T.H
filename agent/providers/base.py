@@ -39,7 +39,8 @@ class BaseLLMProvider(ABC):
         messages: List[Dict[str, Any]],
         tools_metadata: List[Dict[str, Any]],
         on_thought_chunk: Optional[Callable[[str], None]] = None,
-        on_content_chunk: Optional[Callable[[str], None]] = None
+        on_content_chunk: Optional[Callable[[str], None]] = None,
+        think: Optional[bool] = None
     ) -> AgentStepResponse:
         """
         Ejecuta un paso de inferencia del LLM.
@@ -49,6 +50,7 @@ class BaseLLMProvider(ABC):
             tools_metadata: Lista de definiciones de herramientas disponibles.
             on_thought_chunk: Callback opcional invocado al recibir tokens de razonamiento.
             on_content_chunk: Callback opcional invocado al recibir tokens de respuesta.
+            think: True/False fuerza el razonamiento en este paso; None usa el valor por defecto.
             
         Returns:
             AgentStepResponse con el razonamiento, contenido y llamadas a herramientas (si las hay).

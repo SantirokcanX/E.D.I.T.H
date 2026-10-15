@@ -25,12 +25,15 @@ class Config:
 
         # Ollama settings
         cls.OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
-        cls.OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "deepseek-r1:latest")
+        cls.OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:4b")
         # Velocidad: mantener el modelo cargado en RAM/VRAM entre mensajes y limitar el contexto
         cls.OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "30m").strip()
         cls.OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "4096"))
-        # true = razonamiento <think> completo; false = respuestas directas (mucho más rápidas)
-        cls.OLLAMA_THINK = _flag("OLLAMA_THINK", "true")
+        # auto = EDITH decide por consulta (rápido para charla, profundo para problemas difíciles)
+        # true = siempre razona; false = siempre responde directo
+        think = os.getenv("OLLAMA_THINK", "auto").lower().strip()
+        cls.OLLAMA_THINK_MODE = "auto" if think == "auto" else ("true" if think in _TRUE else "false")
+        cls.OLLAMA_THINK = cls.OLLAMA_THINK_MODE == "true"
         cls.OLLAMA_WARMUP = _flag("OLLAMA_WARMUP", "true")
 
         # Gemini settings

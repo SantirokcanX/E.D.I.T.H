@@ -25,7 +25,7 @@ class CoworkingTeam:
             {"role": "system", "content": system_instruction},
             {"role": "user", "content": user_content}
         ]
-        resp = self.provider.generate_step(messages=messages, tools_metadata=[])
+        resp = self.provider.generate_step(messages=messages, tools_metadata=[], think=True)
         return resp.content or resp.thought or "Análisis completado."
 
     def collaborate(

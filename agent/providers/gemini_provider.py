@@ -135,7 +135,8 @@ class GeminiProvider(BaseLLMProvider):
         messages: List[Dict[str, Any]],
         tools_metadata: List[Dict[str, Any]],
         on_thought_chunk: Optional[Callable[[str], None]] = None,
-        on_content_chunk: Optional[Callable[[str], None]] = None
+        on_content_chunk: Optional[Callable[[str], None]] = None,
+        think: Optional[bool] = None
     ) -> AgentStepResponse:
         if not self.client:
             self.client = genai.Client(api_key=self.api_key)

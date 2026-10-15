@@ -293,6 +293,9 @@ async def websocket_chat(websocket: WebSocket):
             if action == "query":
                 user_prompt = payload.get("prompt", "").strip()
                 mode = payload.get("mode", "standard")
+                # Razonamiento: "fast" = directo, "deep" = pensar a fondo, "auto" = EDITH decide
+                reasoning = payload.get("reasoning", "auto")
+                think_choice = {"fast": False, "deep": True}.get(reasoning)
                 speak_response = payload.get("speak", True)
 
                 if not user_prompt:
@@ -403,9 +406,12 @@ async def websocket_chat(websocket: WebSocket):
                         on_tool_result=on_tool_result
                     )
 
+                    deep = edith_agent.resolve_think(user_prompt, think_choice)
+                    await websocket.send_json({"type": "reasoning", "deep": deep})
+
                     res = await loop.run_in_executor(
                         None,
-                        lambda: edith_agent.run(user_prompt, callbacks=callbacks)
+                        lambda: edith_agent.run(user_prompt, callbacks=callbacks, think=deep)
                     )
 
                     await websocket.send_json({
@@ -413,6 +419,7 @@ async def websocket_chat(websocket: WebSocket):
                         "content": res.answer,
                         "thoughts": res.thoughts,
                         "sources": res.sources,
+                        "deep": res.deep_thinking,
                         "session_id": memory_manager.current_session_id
                     })
                     if speak_response and voice_engine.enabled and res.answer:

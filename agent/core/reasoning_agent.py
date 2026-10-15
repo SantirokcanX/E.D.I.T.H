@@ -1,6 +1,7 @@
 """Reasoning Agent Core: Manages EDITH identity as a Daily Companion and Tactical Thinker."""
 
 import json
+import re
 import threading
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Callable
@@ -62,6 +63,28 @@ class AgentRunResult:
     sources: List[Dict[str, str]] = field(default_factory=list)
     total_iterations: int = 0
     audio_path: Optional[str] = None
+    deep_thinking: bool = False
+
+
+# Señales de que una consulta merece razonamiento profundo (más lento pero más fiable)
+_DEEP_PATTERNS = re.compile(
+    r"\b(demuestra|demostraci[oó]n|calcula|resuelve|ecuaci[oó]n|integral|deriva|derivada|l[ií]mite|"
+    r"matriz|probabilidad|estad[ií]stic|teorema|l[oó]gica|paradoja|acertijo|algoritmo|complejidad|"
+    r"optimiza|depura|debug|refactoriza|arquitectura|analiza a fondo|paso a paso|razona|compara|"
+    r"ventajas y desventajas|pros y contras|estrategia|planifica|dise[nñ]a)\b",
+    re.IGNORECASE,
+)
+
+
+def needs_deep_thinking(query: str) -> bool:
+    """Heurística rápida (sin llamar al modelo) para el modo de razonamiento automático."""
+    q = query.strip()
+    if len(q) > 400 or "```" in q:
+        return True
+    if _DEEP_PATTERNS.search(q):
+        return True
+    # Expresiones matemáticas: números con operadores (2x+3=7, 15*4, x^2...)
+    return bool(re.search(r"\d\s*[\+\-\*/\^=]\s*\(?\w", q))
 
 
 EDITH_SYSTEM_PROMPT = """Eres E.D.I.T.H., una compañera de inteligencia artificial excepcional, brillante, empática, táctica y leal. No eres un simple asistente corporativo ni un frío programa; eres una aliada para el día a día con pensamiento lógico profundo, gran calidez humana, sentido del humor inteligente y capacidad de operar la laptop cuando se lo pidas.
@@ -320,8 +343,18 @@ class ReasoningAgent:
             self.learner.record_error(f"Uso de {tool_name}", err_desc, f"Manejar parámetros y validar antes de invocar {tool_name}.")
             return {"error": err_desc}
 
-    def run(self, user_prompt: str, callbacks: Optional[AgentCallbacks] = None) -> AgentRunResult:
+    def resolve_think(self, user_prompt: str, think: Optional[bool] = None) -> bool:
+        """Decide si este turno razona a fondo: elección del usuario > .env > heurística."""
+        if think is not None:
+            return think
+        if Config.OLLAMA_THINK_MODE != "auto":
+            return Config.OLLAMA_THINK_MODE == "true"
+        return needs_deep_thinking(user_prompt)
+
+    def run(self, user_prompt: str, callbacks: Optional[AgentCallbacks] = None,
+            think: Optional[bool] = None) -> AgentRunResult:
         callbacks = callbacks or AgentCallbacks()
+        deep = self.resolve_think(user_prompt, think)
         turn_start = len(self.conversation_history)
         self.conversation_history.append({"role": "user", "content": user_prompt})
         # Recuerdos y lecciones relevantes para ESTA consulta (se calculan una sola vez por turno)
@@ -341,7 +374,8 @@ class ReasoningAgent:
                 messages=self._provider_messages(turn_start, user_prompt, dynamic_context),
                 tools_metadata=ALL_TOOLS_METADATA,
                 on_thought_chunk=callbacks.on_thought_chunk,
-                on_content_chunk=callbacks.on_content_chunk
+                on_content_chunk=callbacks.on_content_chunk,
+                think=deep
             )
 
             if step_response.thought:
@@ -403,7 +437,8 @@ class ReasoningAgent:
             step_response = self.provider.generate_step(
                 messages=self._provider_messages(turn_start, user_prompt, dynamic_context),
                 tools_metadata=[],
-                on_content_chunk=callbacks.on_content_chunk
+                on_content_chunk=callbacks.on_content_chunk,
+                think=deep
             )
             final_answer = step_response.content
             self.conversation_history.append({
@@ -423,5 +458,6 @@ class ReasoningAgent:
             answer=final_answer,
             thoughts=collected_thoughts,
             sources=collected_sources,
-            total_iterations=iteration
+            total_iterations=iteration,
+            deep_thinking=deep
         )

@@ -73,14 +73,15 @@ def ensure_ollama_running(base_url: str = "http://localhost:11434", timeout: flo
 class OllamaProvider(BaseLLMProvider):
     """Proveedor para modelos locales a través de Ollama (ej. DeepSeek-R1, Llama 3)."""
 
-    def __init__(self, base_url: str = "http://localhost:11434", model: str = "deepseek-r1:latest",
+    def __init__(self, base_url: str = "http://localhost:11434", model: str = "qwen3:4b",
                  keep_alive: Optional[str] = None, num_ctx: Optional[int] = None,
                  think: Optional[bool] = None):
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.keep_alive = keep_alive or "30m"
         self.num_ctx = num_ctx
-        self.think = True if think is None else think
+        # Valor por defecto cuando el agente no pide explícitamente razonar o no
+        self.think = False if think is None else think
         # Cliente HTTP persistente: reutiliza la conexión TCP en cada paso del razonamiento
         self._client = httpx.Client(timeout=httpx.Timeout(180.0, connect=5.0))
         # Se desactivan solos si el modelo los rechaza (p. ej. un modelo sin soporte de tools)
@@ -176,7 +177,8 @@ class OllamaProvider(BaseLLMProvider):
         messages: List[Dict[str, Any]],
         tools_metadata: List[Dict[str, Any]],
         on_thought_chunk: Optional[Callable[[str], None]] = None,
-        on_content_chunk: Optional[Callable[[str], None]] = None
+        on_content_chunk: Optional[Callable[[str], None]] = None,
+        think: Optional[bool] = None
     ) -> AgentStepResponse:
         tools = self._convert_tools_for_ollama(tools_metadata)
         
@@ -238,8 +240,9 @@ class OllamaProvider(BaseLLMProvider):
         }
         if tools and self._tools_supported:
             payload["tools"] = tools
-        if not self.think and self._think_supported:
-            payload["think"] = False
+        # Razonamiento por mensaje: en modelos híbridos (qwen3) no hay que recargar nada
+        if self._think_supported:
+            payload["think"] = self.think if think is None else think
 
         thought_accumulated = ""
         content_accumulated = ""

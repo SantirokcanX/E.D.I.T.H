@@ -11,6 +11,15 @@ let activeSessionId = null;
 let streamingEl = null;   // burbuja donde se escribe la respuesta token a token
 let streamingText = "";
 let historySearchTimer = null;
+const REASONING_MODES = {
+  auto: { label: "🧠 Auto", title: "Razonamiento automático: EDITH decide si pensar a fondo" },
+  fast: { label: "⚡ Rápido", title: "Respuesta directa, sin razonamiento (más rápida)" },
+  deep: { label: "🔬 Profundo", title: "Pensar a fondo antes de responder (más lento, más fiable)" },
+};
+let reasoningMode = "auto";
+try { reasoningMode = localStorage.getItem("edith.reasoning") || "auto"; } catch (e) {}
+if (!REASONING_MODES[reasoningMode]) reasoningMode = "auto";
+let lastTurnDeep = null;
 
 document.addEventListener("DOMContentLoaded", () => {
   initMermaid();
@@ -188,6 +197,11 @@ function handleWsMessage(data) {
       thoughtContent.scrollTop = thoughtContent.scrollHeight;
       break;
 
+    case "reasoning":
+      lastTurnDeep = data.deep;
+      thoughtIndicator.innerText = data.deep ? "Pensando a fondo..." : "Respondiendo rápido...";
+      break;
+
     case "content_chunk":
       appendStreamingChunk(data.chunk);
       break;
@@ -209,7 +223,7 @@ function handleWsMessage(data) {
       thoughtIndicator.innerText = "Concluido";
       thoughtIndicator.classList.remove("active");
       resetStreamingBubble();
-      appendAssistantMessage(data.content, data.sources);
+      appendAssistantMessage(data.content, data.sources, data.deep);
       if (data.audio_url && voiceEnabled) {
         playVoiceAudio(data.audio_url);
       }
@@ -275,7 +289,7 @@ function appendUserMessage(text) {
   container.scrollTop = container.scrollHeight;
 }
 
-function appendAssistantMessage(markdownContent, sources = []) {
+function appendAssistantMessage(markdownContent, sources = [], deep = undefined) {
   const container = document.getElementById("chatMessages");
   const msgEl = document.createElement("div");
   msgEl.className = "message assistant-msg";
@@ -296,6 +310,7 @@ function appendAssistantMessage(markdownContent, sources = []) {
       <img class="avatar" src="logo.png" alt="EDITH">
       <span class="name">EDITH</span>
       <span class="time">Ahora</span>
+      ${deep === undefined ? "" : `<span class="reasoning-tag">${deep ? "🔬 razonado" : "⚡ rápido"}</span>`}
     </div>
     <div class="msg-body">
       ${parsedBody}
@@ -697,6 +712,23 @@ function showWelcomeMessage() {
   `;
 }
 
+function setupReasoningToggle() {
+  const btn = document.getElementById("btnReasoning");
+  const order = ["auto", "fast", "deep"];
+  const render = () => {
+    btn.innerText = REASONING_MODES[reasoningMode].label;
+    btn.title = REASONING_MODES[reasoningMode].title;
+    btn.classList.toggle("fast", reasoningMode === "fast");
+    btn.classList.toggle("deep", reasoningMode === "deep");
+  };
+  btn.addEventListener("click", () => {
+    reasoningMode = order[(order.indexOf(reasoningMode) + 1) % order.length];
+    try { localStorage.setItem("edith.reasoning", reasoningMode); } catch (e) {}
+    render();
+  });
+  render();
+}
+
 function setupHistory() {
   const search = document.getElementById("historySearch");
   search.addEventListener("input", () => {
@@ -804,6 +836,7 @@ function setupEventListeners() {
       action: "query",
       prompt: text,
       mode: currentMode,
+      reasoning: reasoningMode,
       speak: voiceEnabled
     }));
   });
@@ -929,6 +962,7 @@ function setupEventListeners() {
   setupDrawer();
   setupSidebar();
   setupHistory();
+  setupReasoningToggle();
   setupThoughtToggle();
 }
 
