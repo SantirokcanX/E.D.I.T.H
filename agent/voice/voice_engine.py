@@ -3,6 +3,8 @@
 import asyncio
 import os
 import re
+import subprocess
+import sys
 import threading
 import uuid
 from pathlib import Path
@@ -136,8 +138,40 @@ class VoiceEngine:
                 rate=voice_info["rate"],
                 pitch=voice_info["pitch"]
             )
-            await communicate.save(str(output_path))
+            await asyncio.wait_for(communicate.save(str(output_path)), timeout=20)
             return str(output_path)
+        except Exception:
+            output_path.unlink(missing_ok=True)  # edge-tts deja un .mp3 vacío al fallar
+            # Fase 4: sin internet (o edge-tts caído) → voz local de Windows para no quedar muda
+            from ..config import Config
+            if not Config.VOICE_OFFLINE_FALLBACK:
+                return None
+            wav_path = output_path.with_suffix(".wav")
+            return await asyncio.to_thread(self.synthesize_offline, clean, wav_path)
+
+    @staticmethod
+    def synthesize_offline(text: str, wav_path: Path) -> Optional[str]:
+        """Síntesis 100% offline con SAPI5 (System.Speech); prefiere una voz en español."""
+        if sys.platform != "win32":
+            return None
+        script = (
+            "[Console]::InputEncoding = [Text.Encoding]::UTF8;"
+            "Add-Type -AssemblyName System.Speech;"
+            "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer;"
+            "$v = $s.GetInstalledVoices() | Where-Object { $_.VoiceInfo.Culture.Name -like 'es-*' } | Select-Object -First 1;"
+            "if ($v) { $s.SelectVoice($v.VoiceInfo.Name) };"
+            "$s.SetOutputToWaveFile($env:EDITH_WAV);"
+            "$s.Speak([Console]::In.ReadToEnd());"
+            "$s.Dispose()"
+        )
+        try:
+            subprocess.run(
+                ["powershell", "-NoProfile", "-Command", script],
+                input=text.encode("utf-8"), timeout=60, check=True,
+                env={**os.environ, "EDITH_WAV": str(wav_path)},
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000),
+            )
+            return str(wav_path) if wav_path.exists() and wav_path.stat().st_size > 0 else None
         except Exception:
             return None
 

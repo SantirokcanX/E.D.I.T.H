@@ -18,7 +18,13 @@ def get_provider(provider_name: Optional[str] = None, model: Optional[str] = Non
         return GeminiProvider(api_key=Config.GEMINI_API_KEY, model=m)
     elif name == "ollama":
         m = model or Config.OLLAMA_MODEL
-        return OllamaProvider(base_url=Config.OLLAMA_BASE_URL, model=m)
+        return OllamaProvider(
+            base_url=Config.OLLAMA_BASE_URL,
+            model=m,
+            keep_alive=Config.OLLAMA_KEEP_ALIVE,
+            num_ctx=Config.OLLAMA_NUM_CTX,
+            think=Config.OLLAMA_THINK,
+        )
     else:
         raise ValueError(f"Proveedor no soportado: '{name}'. Opciones disponibles: 'ollama', 'gemini'.")
 

@@ -36,11 +36,6 @@
         <button class="mode-opt" id="btnModeAuto" data-mode="auto" title="EDITH decide según la consulta">🧠 Auto</button>
       </div>
 
-      <div class="sidebar-section-label">Conversaciones</div>
-      <select id="sessionSelect" class="session-select" title="Historial de charlas">
-        <option value="">Cargando...</option>
-      </select>
-
       <div class="sidebar-section-label sidebar-tools-label">Herramientas</div>
       <div class="sidebar-tools">
         <button class="tool-btn" data-tab="filesTab" title="Archivos del workspace">📁 <span>Archivos</span></button>
@@ -49,7 +44,13 @@
         <button class="tool-btn" data-tab="learningsTab" title="Aprendizaje y Machine Learning">🌱 <span>Evolución</span></button>
       </div>
 
-      <div class="sidebar-spacer"></div>
+      <div class="sidebar-section-label">Historial de conversaciones</div>
+      <div class="history-panel" id="historyPanel">
+        <input type="search" id="historySearch" class="history-search" placeholder="Buscar en el historial..." aria-label="Buscar en el historial">
+        <div class="history-list" id="historyList" role="list">
+          <div class="history-empty">Cargando...</div>
+        </div>
+      </div>
 
       <div class="sidebar-footer">
         <button id="btnWakeWord" class="btn-wakeword active" title="Detección continua por voz: di 'Oye EDITH'">

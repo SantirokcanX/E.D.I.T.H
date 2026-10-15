@@ -7,6 +7,10 @@ let activeFilePath = "notas_del_dia.md";
 let recognition = null;
 let wakeWordActive = true;
 let isListeningForCommand = false;
+let activeSessionId = null;
+let streamingEl = null;   // burbuja donde se escribe la respuesta token a token
+let streamingText = "";
+let historySearchTimer = null;
 
 document.addEventListener("DOMContentLoaded", () => {
   initMermaid();
@@ -172,6 +176,8 @@ function handleWsMessage(data) {
 
   switch (data.type) {
     case "iteration_start":
+      // Cada paso del razonamiento empieza limpio (un paso con herramientas no es la respuesta final)
+      resetStreamingBubble();
       document.getElementById("thoughtLine").style.display = "flex";
       thoughtIndicator.innerText = `Razonando paso ${data.iteration}`;
       thoughtIndicator.classList.add("active");
@@ -182,7 +188,12 @@ function handleWsMessage(data) {
       thoughtContent.scrollTop = thoughtContent.scrollHeight;
       break;
 
+    case "content_chunk":
+      appendStreamingChunk(data.chunk);
+      break;
+
     case "tool_call":
+      resetStreamingBubble();
       appendToolCallBanner(data.tool, data.args);
       break;
 
@@ -197,20 +208,52 @@ function handleWsMessage(data) {
     case "final_answer":
       thoughtIndicator.innerText = "Concluido";
       thoughtIndicator.classList.remove("active");
+      resetStreamingBubble();
       appendAssistantMessage(data.content, data.sources);
       if (data.audio_url && voiceEnabled) {
         playVoiceAudio(data.audio_url);
       }
+      if (data.session_id) activeSessionId = data.session_id;
       loadWorkspaceFiles();
+      loadSessions();
       checkAndRenderDiagramsInText(data.content);
       break;
 
+    case "audio_ready":
+      if (voiceEnabled) playVoiceAudio(data.audio_url);
+      break;
+
     case "error":
+      resetStreamingBubble();
       thoughtIndicator.innerText = "Error";
       thoughtIndicator.classList.remove("active");
       appendAssistantMessage(`⚠️ **Error:** ${data.message}`);
       break;
   }
+}
+
+// Respuesta en vivo: se muestra mientras el modelo escribe, en vez de esperar al final
+function appendStreamingChunk(chunk) {
+  const container = document.getElementById("chatMessages");
+  if (!streamingEl) {
+    streamingEl = document.createElement("div");
+    streamingEl.className = "message assistant-msg streaming-msg";
+    streamingEl.innerHTML = `
+      <div class="msg-header"><span class="avatar">👓</span><span class="name">EDITH</span><span class="time">escribiendo...</span></div>
+      <div class="msg-body"></div>
+    `;
+    container.appendChild(streamingEl);
+    streamingText = "";
+  }
+  streamingText += chunk;
+  streamingEl.querySelector(".msg-body").textContent = streamingText;
+  container.scrollTop = container.scrollHeight;
+}
+
+function resetStreamingBubble() {
+  if (streamingEl) streamingEl.remove();
+  streamingEl = null;
+  streamingText = "";
 }
 
 function playVoiceAudio(url) {
@@ -501,19 +544,165 @@ async function saveCurrentFile() {
   }
 }
 
+// 8b. Historial de conversaciones
 async function loadSessions() {
+  const list = document.getElementById("historyList");
+  const q = document.getElementById("historySearch")?.value.trim() || "";
   try {
-    const res = await fetch("/api/sessions");
+    const res = await fetch(`/api/sessions${q ? `?q=${encodeURIComponent(q)}` : ""}`);
     const sessions = await res.json();
-    const select = document.getElementById("sessionSelect");
-    select.innerHTML = "";
-    sessions.forEach(s => {
-      const opt = document.createElement("option");
-      opt.value = s.id;
-      opt.innerText = `${s.title} (${s.messages_count} msgs)`;
-      select.appendChild(opt);
+    const active = sessions.find(s => s.active);
+    const firstLoad = !activeSessionId;
+    if (active && firstLoad) activeSessionId = active.id;
+    renderHistory(sessions, q);
+    // Al abrir EDITH, mostrar la conversación en curso en lugar de un chat vacío
+    if (firstLoad && active && active.messages_count > 0 && !q) openSession(active.id);
+  } catch (e) {
+    list.innerHTML = `<div class="history-empty">No se pudo cargar el historial.</div>`;
+  }
+}
+
+function historyGroupLabel(iso) {
+  if (!iso) return "Anteriores";
+  const d = new Date(iso);
+  const today = new Date();
+  const startOfDay = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const days = Math.round((startOfDay(today) - startOfDay(d)) / 86400000);
+  if (days <= 0) return "Hoy";
+  if (days === 1) return "Ayer";
+  if (days < 7) return "Últimos 7 días";
+  if (days < 30) return "Últimos 30 días";
+  return d.toLocaleDateString("es", { month: "long", year: "numeric" });
+}
+
+function renderHistory(sessions, query) {
+  const list = document.getElementById("historyList");
+  list.innerHTML = "";
+  if (!sessions.length) {
+    list.innerHTML = `<div class="history-empty">${query ? "Sin resultados." : "Aún no hay conversaciones."}</div>`;
+    return;
+  }
+  let lastGroup = null;
+  sessions.forEach(s => {
+    const group = historyGroupLabel(s.updated_at);
+    if (group !== lastGroup) {
+      const g = document.createElement("div");
+      g.className = "history-group";
+      g.textContent = group;
+      list.appendChild(g);
+      lastGroup = group;
+    }
+    const item = document.createElement("div");
+    item.className = "history-item" + (s.id === activeSessionId ? " active" : "");
+    item.setAttribute("role", "listitem");
+    const time = s.updated_at ? new Date(s.updated_at).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" }) : "";
+    const meta = s.match ? `“${s.match}”` : `${s.messages_count} mensajes${time ? " · " + time : ""}`;
+    item.innerHTML = `
+      <button class="history-main" title="${escapeHtml(s.title)}">
+        <span class="history-title">${escapeHtml(s.title)}</span>
+        <span class="history-meta">${escapeHtml(meta)}</span>
+      </button>
+      <div class="history-actions">
+        <button data-act="obsidian" title="Guardar en Obsidian">💎</button>
+        <button data-act="rename" title="Renombrar">✎</button>
+        <button data-act="delete" class="danger" title="Eliminar">🗑</button>
+      </div>
+    `;
+    item.querySelector(".history-main").addEventListener("click", () => openSession(s.id));
+    item.querySelector('[data-act="rename"]').addEventListener("click", () => renameSession(s.id, s.title));
+    item.querySelector('[data-act="delete"]').addEventListener("click", () => deleteSession(s.id, s.title));
+    item.querySelector('[data-act="obsidian"]').addEventListener("click", () => exportSessionToObsidian(s.id));
+    list.appendChild(item);
+  });
+}
+
+async function openSession(id) {
+  try {
+    const loadRes = await fetch(`/api/sessions/${encodeURIComponent(id)}/load`, { method: "POST" });
+    if (!loadRes.ok) throw new Error("No encontrada");
+    const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`);
+    const data = await res.json();
+    activeSessionId = id;
+    resetStreamingBubble();
+    const container = document.getElementById("chatMessages");
+    container.innerHTML = "";
+    data.messages.forEach(m => {
+      if (m.role === "user") appendUserMessage(m.content);
+      else if (m.role === "assistant") appendAssistantMessage(m.content);
+      else if (m.role === "tool") appendToolCallBanner(m.tool, m.args || {});
     });
+    if (!data.messages.length) showWelcomeMessage();
+    document.getElementById("thoughtLine").style.display = "none";
+    loadSessions();
+    closeMobileSidebar();
+  } catch (e) {
+    alert("No se pudo abrir la conversación.");
+  }
+}
+
+async function renameSession(id, currentTitle) {
+  const title = prompt("Nuevo nombre para la conversación:", currentTitle);
+  if (!title || !title.trim() || title === currentTitle) return;
+  await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title: title.trim() })
+  });
+  loadSessions();
+}
+
+async function deleteSession(id, title) {
+  if (!confirm(`¿Eliminar la conversación "${title}"? No se puede deshacer.`)) return;
+  const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) return;
+  const data = await res.json();
+  if (id === activeSessionId) {
+    activeSessionId = data.active_id;
+    document.getElementById("chatMessages").innerHTML = "";
+    showWelcomeMessage();
+  }
+  loadSessions();
+}
+
+async function exportSessionToObsidian(id) {
+  try {
+    const res = await fetch(`/api/sessions/${encodeURIComponent(id)}/obsidian`, { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Error");
+    alert(`Guardada en Obsidian: ${data.note}`);
+  } catch (e) {
+    alert("No se pudo guardar en Obsidian: " + e.message);
+  }
+}
+
+async function startNewSession() {
+  // Limpiar la vista primero: si se escribe rápido, el mensaje nuevo no debe borrarse después
+  resetStreamingBubble();
+  showWelcomeMessage();
+  try {
+    const res = await fetch("/api/sessions/new", { method: "POST" });
+    const data = await res.json();
+    activeSessionId = data.id;
   } catch (e) {}
+  loadSessions();
+}
+
+function showWelcomeMessage() {
+  const container = document.getElementById("chatMessages");
+  container.innerHTML = `
+    <div class="message assistant-msg">
+      <div class="msg-header"><span class="avatar">👓</span><span class="name">EDITH</span></div>
+      <div class="msg-body"><p>Lista para un nuevo tema. ¿En qué te ayudo?</p></div>
+    </div>
+  `;
+}
+
+function setupHistory() {
+  const search = document.getElementById("historySearch");
+  search.addEventListener("input", () => {
+    clearTimeout(historySearchTimer);
+    historySearchTimer = setTimeout(loadSessions, 250);
+  });
 }
 
 async function loadLearnings() {
@@ -739,6 +928,7 @@ function setupEventListeners() {
 
   setupDrawer();
   setupSidebar();
+  setupHistory();
   setupThoughtToggle();
 }
 
@@ -784,15 +974,9 @@ function setupSidebar() {
     });
   }
 
-  // "Nueva conversación": limpia el hilo visible (no borra el historial guardado)
+  // "Nueva conversación": abre una sesión nueva (la anterior queda en el historial)
   document.getElementById("btnNewSession").addEventListener("click", () => {
-    const container = document.getElementById("chatMessages");
-    container.innerHTML = `
-      <div class="message assistant-msg">
-        <div class="msg-header"><span class="avatar">👓</span><span class="name">EDITH</span></div>
-        <div class="msg-body"><p>Lista para un nuevo tema. ¿En qué te ayudo?</p></div>
-      </div>
-    `;
+    startNewSession();
     closeMobileSidebar();
   });
 }

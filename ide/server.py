@@ -3,6 +3,7 @@
 import asyncio
 import json
 import os
+import threading
 from pathlib import Path
 from typing import Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query
@@ -19,6 +20,7 @@ from agent.memory.memory_manager import get_memory_manager
 from agent.learning.error_learner import get_error_learner
 from agent.tools.workspace_tools import WORKSPACE_DIR, save_to_workspace, read_workspace_file, list_workspace_files
 from agent.tools.system_tools import get_system_status, open_application, run_system_command, control_system_volume
+from agent.tools.obsidian_tools import get_vault_path, sync_edith_session, search_vault
 
 try:  # ML opcional
     from agent.ml import get_ml_engine, ROUTES as ML_ROUTES
@@ -48,6 +50,10 @@ if get_ml_engine and Config.ML_ENABLED:
     except Exception as exc:
         print(f"[ML] desactivado: {exc}")
 
+# Precargar el modelo en segundo plano: el primer mensaje ya no espera a que Ollama lo cargue
+if Config.OLLAMA_WARMUP and hasattr(provider, "warmup"):
+    threading.Thread(target=provider.warmup, daemon=True).start()
+
 
 class WorkspaceFileRequest(BaseModel):
     filename: str
@@ -73,6 +79,10 @@ class SystemAppRequest(BaseModel):
 
 class SystemVolumeRequest(BaseModel):
     action: str
+
+
+class SessionRenameRequest(BaseModel):
+    title: str
 
 
 @app.get("/api/system/status")
@@ -171,8 +181,79 @@ def api_save_workspace_file(req: WorkspaceFileRequest):
 
 
 @app.get("/api/sessions")
-def api_get_sessions():
-    return memory_manager.list_sessions()
+def api_get_sessions(q: str = Query("")):
+    sessions = memory_manager.search_sessions(q) if q.strip() else memory_manager.list_sessions()
+    current = memory_manager.current_session_id
+    return [{**s, "active": s["id"] == current} for s in sessions]
+
+
+@app.get("/api/sessions/{session_id}")
+def api_get_session(session_id: str):
+    data = memory_manager.get_session(session_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="Sesión no encontrada")
+    # Solo lo que se muestra en el chat: mensajes del usuario, respuestas y herramientas usadas
+    messages = []
+    for m in data.get("messages", []):
+        role = m.get("role")
+        if role == "user" and m.get("content"):
+            messages.append({"role": "user", "content": m["content"]})
+        elif role == "assistant":
+            for tc in m.get("tool_calls") or []:
+                messages.append({"role": "tool", "tool": tc.get("name", ""), "args": tc.get("arguments", {})})
+            if m.get("content"):
+                messages.append({"role": "assistant", "content": m["content"]})
+    return {"id": data["id"], "title": data.get("title", ""), "created_at": data.get("created_at", ""),
+            "updated_at": data.get("updated_at", ""), "messages": messages}
+
+
+@app.post("/api/sessions/new")
+def api_new_session():
+    edith_agent.reset_history()
+    return {"id": memory_manager.current_session_id}
+
+
+@app.post("/api/sessions/{session_id}/load")
+def api_load_session(session_id: str):
+    if not edith_agent.load_specific_session(session_id):
+        raise HTTPException(status_code=404, detail="Sesión no encontrada")
+    return {"id": session_id}
+
+
+@app.patch("/api/sessions/{session_id}")
+def api_rename_session(session_id: str, req: SessionRenameRequest):
+    if not memory_manager.rename_session(session_id, req.title):
+        raise HTTPException(status_code=404, detail="Sesión no encontrada")
+    return {"status": "ok"}
+
+
+@app.delete("/api/sessions/{session_id}")
+def api_delete_session(session_id: str):
+    was_active = session_id == memory_manager.current_session_id
+    if not memory_manager.delete_session(session_id):
+        raise HTTPException(status_code=404, detail="Sesión no encontrada")
+    if was_active:
+        edith_agent.reset_history()
+    return {"status": "ok", "active_id": memory_manager.current_session_id}
+
+
+@app.post("/api/sessions/{session_id}/obsidian")
+def api_session_to_obsidian(session_id: str):
+    res = sync_edith_session(session_id)
+    if "error" in res:
+        raise HTTPException(status_code=404, detail=res["error"])
+    return res
+
+
+@app.get("/api/obsidian/status")
+def api_obsidian_status():
+    vault = get_vault_path()
+    return {"vault": str(vault), "exists": vault.exists(), "auto_sync": Config.OBSIDIAN_AUTO_SYNC}
+
+
+@app.get("/api/obsidian/search")
+def api_obsidian_search(q: str = Query(...)):
+    return search_vault(q)
 
 
 @app.get("/api/learnings")
@@ -182,10 +263,21 @@ def api_get_learnings():
 
 @app.get("/api/audio/{filename}")
 def api_get_audio(filename: str):
-    file_path = AUDIO_DIR / filename
-    if not file_path.exists():
+    file_path = (AUDIO_DIR / filename).resolve()
+    if file_path.parent != AUDIO_DIR.resolve() or not file_path.is_file():
         raise HTTPException(status_code=404, detail="Audio file not found")
-    return FileResponse(file_path, media_type="audio/mpeg")
+    media_type = "audio/wav" if file_path.suffix == ".wav" else "audio/mpeg"
+    return FileResponse(file_path, media_type=media_type)
+
+
+async def send_voice(websocket: WebSocket, text: str):
+    """Sintetiza la voz DESPUÉS de mostrar la respuesta: el texto ya no espera al audio."""
+    try:
+        audio_file = await voice_engine.synthesize_async(text)
+        if audio_file:
+            await websocket.send_json({"type": "audio_ready", "audio_url": f"/api/audio/{Path(audio_file).name}"})
+    except Exception:
+        pass
 
 
 @app.websocket("/ws/chat")
@@ -260,18 +352,14 @@ async def websocket_chat(websocket: WebSocket):
                     if ml_engine:
                         ml_engine.remember_turn(user_prompt)
 
-                    audio_url = None
-                    if speak_response and voice_engine.enabled:
-                        audio_file = await voice_engine.synthesize_async(result["answer"])
-                        if audio_file:
-                            audio_url = f"/api/audio/{Path(audio_file).name}"
-
                     await websocket.send_json({
                         "type": "final_answer",
                         "content": result["answer"],
                         "sources": result.get("sources", []),
-                        "audio_url": audio_url
+                        "session_id": memory_manager.current_session_id
                     })
+                    if speak_response and voice_engine.enabled and result.get("answer"):
+                        await send_voice(websocket, result["answer"])
 
                 else:
                     loop = asyncio.get_event_loop()
@@ -285,6 +373,12 @@ async def websocket_chat(websocket: WebSocket):
                     def on_thought_chunk(chunk: str):
                         asyncio.run_coroutine_threadsafe(
                             websocket.send_json({"type": "thought_chunk", "chunk": chunk}),
+                            loop
+                        )
+
+                    def on_content_chunk(chunk: str):
+                        asyncio.run_coroutine_threadsafe(
+                            websocket.send_json({"type": "content_chunk", "chunk": chunk}),
                             loop
                         )
 
@@ -304,6 +398,7 @@ async def websocket_chat(websocket: WebSocket):
                     callbacks = AgentCallbacks(
                         on_iteration_start=on_iteration_start,
                         on_thought_chunk=on_thought_chunk,
+                        on_content_chunk=on_content_chunk,
                         on_tool_call=on_tool_call,
                         on_tool_result=on_tool_result
                     )
@@ -313,19 +408,15 @@ async def websocket_chat(websocket: WebSocket):
                         lambda: edith_agent.run(user_prompt, callbacks=callbacks)
                     )
 
-                    audio_url = None
-                    if speak_response and voice_engine.enabled and res.answer:
-                        audio_file = await voice_engine.synthesize_async(res.answer)
-                        if audio_file:
-                            audio_url = f"/api/audio/{Path(audio_file).name}"
-
                     await websocket.send_json({
                         "type": "final_answer",
                         "content": res.answer,
                         "thoughts": res.thoughts,
                         "sources": res.sources,
-                        "audio_url": audio_url
+                        "session_id": memory_manager.current_session_id
                     })
+                    if speak_response and voice_engine.enabled and res.answer:
+                        await send_voice(websocket, res.answer)
 
     except WebSocketDisconnect:
         pass

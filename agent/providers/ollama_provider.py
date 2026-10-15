@@ -40,11 +40,17 @@ def ensure_ollama_running(base_url: str = "http://localhost:11434", timeout: flo
         creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
 
     try:
+        # Flash attention + caché KV en 8 bits: el contexto ocupa ~la mitad de VRAM,
+        # así cabe más del modelo en la GPU (solo aplica cuando EDITH arranca Ollama)
+        env = {**os.environ}
+        env.setdefault("OLLAMA_FLASH_ATTENTION", "1")
+        env.setdefault("OLLAMA_KV_CACHE_TYPE", "q8_0")
         subprocess.Popen(
             [ollama_cmd, "serve"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            creationflags=creationflags
+            creationflags=creationflags,
+            env=env
         )
     except Exception:
         return False
@@ -67,9 +73,41 @@ def ensure_ollama_running(base_url: str = "http://localhost:11434", timeout: flo
 class OllamaProvider(BaseLLMProvider):
     """Proveedor para modelos locales a través de Ollama (ej. DeepSeek-R1, Llama 3)."""
 
-    def __init__(self, base_url: str = "http://localhost:11434", model: str = "deepseek-r1:latest"):
+    def __init__(self, base_url: str = "http://localhost:11434", model: str = "deepseek-r1:latest",
+                 keep_alive: Optional[str] = None, num_ctx: Optional[int] = None,
+                 think: Optional[bool] = None):
         self.base_url = base_url.rstrip("/")
         self.model = model
+        self.keep_alive = keep_alive or "30m"
+        self.num_ctx = num_ctx
+        self.think = True if think is None else think
+        # Cliente HTTP persistente: reutiliza la conexión TCP en cada paso del razonamiento
+        self._client = httpx.Client(timeout=httpx.Timeout(180.0, connect=5.0))
+        # Se desactivan solos si el modelo los rechaza (p. ej. un modelo sin soporte de tools)
+        self._tools_supported = True
+        self._think_supported = True
+
+    def _options(self) -> Dict[str, Any]:
+        options: Dict[str, Any] = {"temperature": 0.6}
+        if self.num_ctx:
+            options["num_ctx"] = self.num_ctx
+        return options
+
+    def warmup(self) -> bool:
+        """Carga el modelo en memoria por adelantado para que el primer mensaje responda rápido."""
+        try:
+            if "localhost" in self.base_url or "127.0.0.1" in self.base_url:
+                ensure_ollama_running(self.base_url, timeout=8.0)
+            # Mismas opciones que el chat: si num_ctx difiere, Ollama recarga el modelo (~10 s)
+            res = self._client.post(
+                f"{self.base_url}/api/generate",
+                json={"model": self.model, "prompt": "", "keep_alive": self.keep_alive,
+                      "options": self._options()},
+                timeout=120.0,
+            )
+            return res.status_code == 200
+        except Exception:
+            return False
 
     def is_available(self) -> tuple[bool, str]:
         # Si es local, verificar o intentar auto-iniciar
@@ -108,6 +146,31 @@ class OllamaProvider(BaseLLMProvider):
             })
         return ollama_tools
 
+    def _open_stream(self, payload: Dict[str, Any]):
+        """Abre el stream de /api/chat. Si el modelo no soporta `tools` o `think`,
+        reintenta sin esa opción y lo recuerda para no volver a pagar el error."""
+        for _ in range(3):
+            ctx = self._client.stream("POST", f"{self.base_url}/api/chat", json=payload)
+            response = ctx.__enter__()
+            if response.status_code == 400:
+                body = response.read().decode("utf-8", errors="replace").lower()
+                ctx.__exit__(None, None, None)
+                if "tools" in payload and "tool" in body:
+                    self._tools_supported = False
+                    payload.pop("tools", None)
+                    continue
+                if "think" in payload and "think" in body:
+                    self._think_supported = False
+                    payload.pop("think", None)
+                    continue
+                raise RuntimeError(f"Error de Ollama (400): {body}")
+            if response.status_code != 200:
+                body = response.read().decode("utf-8", errors="replace")
+                ctx.__exit__(None, None, None)
+                raise RuntimeError(f"Error de Ollama ({response.status_code}): {body}")
+            return ctx, response
+        raise RuntimeError("Ollama rechazó la solicitud repetidamente.")
+
     def generate_step(
         self,
         messages: List[Dict[str, Any]],
@@ -117,22 +180,18 @@ class OllamaProvider(BaseLLMProvider):
     ) -> AgentStepResponse:
         tools = self._convert_tools_for_ollama(tools_metadata)
         
-        # Inyectar instrucción de herramientas en el sistema para reforzar modelos ReAct / DeepSeek-R1
+        # Instrucción breve de herramientas: los esquemas completos ya viajan en `tools`
+        # (repetirlos en el prompt solo añadía miles de tokens a procesar en cada paso).
         enhanced_messages = list(messages)
-        tools_instructions = (
-            "\n\n[HERRAMIENTAS DISPONIBLES]:\n"
-            "Tienes acceso a las siguientes herramientas para consultar la web si necesitas información actual o verificar datos:\n"
-        )
-        for t in tools_metadata:
-            tools_instructions += f"- `{t['name']}`: {t['description']}. Parámetros: {json.dumps(t['parameters']['properties'])}\n"
-        
-        tools_instructions += (
-            "\nSi necesitas buscar o consultar una web, puedes usar la llamada a función nativa O escribir un bloque JSON:\n"
-            "```json\n"
-            '{"action": "web_search", "arguments": {"query": "ejemplo de busqueda"}}\n'
-            "```\n"
-            "Si ya tienes suficiente información o es una pregunta general, responde directamente al usuario de forma clara y detallada.\n"
-        )
+        tools_instructions = ""
+        if tools_metadata:
+            names = ", ".join(f"`{t['name']}`" for t in tools_metadata)
+            tools_instructions = (
+                f"\n\n[HERRAMIENTAS DISPONIBLES]: {names}.\n"
+                "Úsalas con llamada a función nativa o con un bloque "
+                '```json {"action": "<herramienta>", "arguments": {...}}```. '
+                "Si no necesitas ninguna, responde directamente.\n"
+            )
 
         # Si el primer mensaje es system, le añadimos las herramientas. Si no, lo agregamos.
         if enhanced_messages and enhanced_messages[0]["role"] == "system":
@@ -173,12 +232,14 @@ class OllamaProvider(BaseLLMProvider):
         payload = {
             "model": self.model,
             "messages": clean_messages,
-            "tools": tools,
             "stream": True,
-            "options": {
-                "temperature": 0.6
-            }
+            "keep_alive": self.keep_alive,
+            "options": self._options()
         }
+        if tools and self._tools_supported:
+            payload["tools"] = tools
+        if not self.think and self._think_supported:
+            payload["think"] = False
 
         thought_accumulated = ""
         content_accumulated = ""
@@ -186,108 +247,96 @@ class OllamaProvider(BaseLLMProvider):
 
         in_think_tag = False
 
-        with httpx.Client(timeout=180.0) as client:
-            response_ctx = None
-            try:
-                response_ctx = client.stream("POST", f"{self.base_url}/api/chat", json=payload)
-                response = response_ctx.__enter__()
-            except (httpx.ConnectError, httpx.NetworkError):
-                if response_ctx:
-                    try:
-                        response_ctx.__exit__(None, None, None)
-                    except Exception:
-                        pass
-                # Intentar auto-iniciar Ollama
-                if ensure_ollama_running(self.base_url, timeout=7.0):
-                    try:
-                        response_ctx = client.stream("POST", f"{self.base_url}/api/chat", json=payload)
-                        response = response_ctx.__enter__()
-                    except Exception:
-                        raise RuntimeError(
-                            "Ollama se está iniciando pero aún no está listo para procesar solicitudes. "
-                            "Por favor espera unos 5 segundos y vuelve a enviar tu mensaje."
-                        )
-                else:
+        response_ctx = None
+        try:
+            response_ctx, response = self._open_stream(payload)
+        except (httpx.ConnectError, httpx.NetworkError):
+            # Intentar auto-iniciar Ollama
+            if ensure_ollama_running(self.base_url, timeout=7.0):
+                try:
+                    response_ctx, response = self._open_stream(payload)
+                except Exception:
                     raise RuntimeError(
-                        f"No se pudo conectar a Ollama en {self.base_url}. "
-                        "El servicio local no está activo. Abre la aplicación Ollama en tu laptop o ejecuta 'ollama serve' en tu terminal."
+                        "Ollama se está iniciando pero aún no está listo para procesar solicitudes. "
+                        "Por favor espera unos 5 segundos y vuelve a enviar tu mensaje."
                     )
+            else:
+                raise RuntimeError(
+                    f"No se pudo conectar a Ollama en {self.base_url}. "
+                    "El servicio local no está activo. Abre la aplicación Ollama en tu laptop o ejecuta 'ollama serve'."
+                )
 
-            try:
-                if response.status_code != 200:
-                    error_body = response.read().decode("utf-8", errors="replace")
-                    raise RuntimeError(f"Error de Ollama ({response.status_code}): {error_body}")
+        try:
+            for line in response.iter_lines():
+                if not line:
+                    continue
+                try:
+                    chunk_json = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
 
-                for line in response.iter_lines():
-                    if not line:
-                        continue
-                    try:
-                        chunk_json = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
+                msg = chunk_json.get("message", {})
+                
+                # 1. Campo de 'thinking' nativo en Ollama 0.5+
+                if "thinking" in msg and msg["thinking"]:
+                    t_chunk = msg["thinking"]
+                    thought_accumulated += t_chunk
+                    if on_thought_chunk:
+                        on_thought_chunk(t_chunk)
 
-                    msg = chunk_json.get("message", {})
-                    
-                    # 1. Campo de 'thinking' nativo en Ollama 0.5+
-                    if "thinking" in msg and msg["thinking"]:
-                        t_chunk = msg["thinking"]
-                        thought_accumulated += t_chunk
-                        if on_thought_chunk:
-                            on_thought_chunk(t_chunk)
+                # 2. Llamadas a herramientas nativas devueltas por Ollama
+                if "tool_calls" in msg and msg["tool_calls"]:
+                    for tc in msg["tool_calls"]:
+                        func = tc.get("function", {})
+                        name = func.get("name", "")
+                        args = func.get("arguments", {})
+                        if isinstance(args, str):
+                            try:
+                                args = json.loads(args)
+                            except Exception:
+                                pass
+                        if name:
+                            tool_calls.append(ToolCall(name=name, arguments=args))
 
-                    # 2. Llamadas a herramientas nativas devueltas por Ollama
-                    if "tool_calls" in msg and msg["tool_calls"]:
-                        for tc in msg["tool_calls"]:
-                            func = tc.get("function", {})
-                            name = func.get("name", "")
-                            args = func.get("arguments", {})
-                            if isinstance(args, str):
-                                try:
-                                    args = json.loads(args)
-                                except Exception:
-                                    pass
-                            if name:
-                                tool_calls.append(ToolCall(name=name, arguments=args))
-
-                    # 3. Contenido de texto y análisis de etiquetas <think> de DeepSeek-R1
-                    delta = msg.get("content", "")
-                    if delta:
-                        # Procesar etiquetas <think> y </think> si vienen en el contenido
-                        if "<think>" in delta:
-                            in_think_tag = True
-                            parts = delta.split("<think>", 1)
-                            # Lo que estuviera antes va al contenido
-                            if parts[0]:
-                                content_accumulated += parts[0]
-                                if on_content_chunk:
-                                    on_content_chunk(parts[0])
-                            delta = parts[1]
-
-                        if in_think_tag:
-                            if "</think>" in delta:
-                                in_think_tag = False
-                                t_part, rest = delta.split("</think>", 1)
-                                thought_accumulated += t_part
-                                if on_thought_chunk:
-                                    on_thought_chunk(t_part)
-                                if rest:
-                                    content_accumulated += rest
-                                    if on_content_chunk:
-                                        on_content_chunk(rest)
-                            else:
-                                thought_accumulated += delta
-                                if on_thought_chunk:
-                                    on_thought_chunk(delta)
-                        else:
-                            content_accumulated += delta
+                # 3. Contenido de texto y análisis de etiquetas <think> de DeepSeek-R1
+                delta = msg.get("content", "")
+                if delta:
+                    # Procesar etiquetas <think> y </think> si vienen en el contenido
+                    if "<think>" in delta:
+                        in_think_tag = True
+                        parts = delta.split("<think>", 1)
+                        # Lo que estuviera antes va al contenido
+                        if parts[0]:
+                            content_accumulated += parts[0]
                             if on_content_chunk:
-                                on_content_chunk(delta)
-            finally:
-                if response_ctx:
-                    try:
-                        response_ctx.__exit__(None, None, None)
-                    except Exception:
-                        pass
+                                on_content_chunk(parts[0])
+                        delta = parts[1]
+
+                    if in_think_tag:
+                        if "</think>" in delta:
+                            in_think_tag = False
+                            t_part, rest = delta.split("</think>", 1)
+                            thought_accumulated += t_part
+                            if on_thought_chunk:
+                                on_thought_chunk(t_part)
+                            if rest:
+                                content_accumulated += rest
+                                if on_content_chunk:
+                                    on_content_chunk(rest)
+                        else:
+                            thought_accumulated += delta
+                            if on_thought_chunk:
+                                on_thought_chunk(delta)
+                    else:
+                        content_accumulated += delta
+                        if on_content_chunk:
+                            on_content_chunk(delta)
+        finally:
+            if response_ctx:
+                try:
+                    response_ctx.__exit__(None, None, None)
+                except Exception:
+                    pass
 
         # Si el modelo no usó tool_calls nativos, buscar si produjo un bloque JSON de acción
         if not tool_calls:

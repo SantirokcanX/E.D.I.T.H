@@ -83,7 +83,8 @@ class GeminiProvider(BaseLLMProvider):
             content = msg.get("content", "")
 
             if role == "system":
-                system_instruction = content
+                # Puede haber más de uno (prompt base + contexto dinámico del turno)
+                system_instruction = f"{system_instruction}\n\n{content}" if system_instruction else content
             elif role == "user":
                 gemini_contents.append(
                     types.Content(

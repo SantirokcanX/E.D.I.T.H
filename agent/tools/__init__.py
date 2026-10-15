@@ -16,6 +16,15 @@ from .system_tools import (
     SYSTEM_TOOLS_METADATA
 )
 from .diagram_tools import save_diagram, DIAGRAM_TOOLS_METADATA
+from .obsidian_tools import (
+    create_note as obsidian_create_note,
+    append_note as obsidian_append_note,
+    read_note as obsidian_read_note,
+    search_vault as obsidian_search,
+    sync_edith_session as obsidian_sync_session,
+    OBSIDIAN_TOOLS_METADATA
+)
+from .clipboard_tools import read_clipboard, write_clipboard, CLIPBOARD_TOOLS_METADATA
 from .screen_tools import (
     capture_screen,
     analyze_screen,
@@ -59,7 +68,9 @@ ALL_TOOLS_METADATA = (
     WORKSPACE_TOOLS_METADATA +
     SYSTEM_TOOLS_METADATA +
     DIAGRAM_TOOLS_METADATA +
-    SCREEN_TOOLS_METADATA
+    SCREEN_TOOLS_METADATA +
+    OBSIDIAN_TOOLS_METADATA +
+    CLIPBOARD_TOOLS_METADATA
 )
 
 __all__ = [
@@ -76,6 +87,15 @@ __all__ = [
     "capture_screen",
     "analyze_screen",
     "get_active_window_info",
+    "obsidian_create_note",
+    "obsidian_append_note",
+    "obsidian_read_note",
+    "obsidian_search",
+    "obsidian_sync_session",
+    "read_clipboard",
+    "write_clipboard",
+    "OBSIDIAN_TOOLS_METADATA",
+    "CLIPBOARD_TOOLS_METADATA",
     "SEARCH_TOOLS_METADATA",
     "WORKSPACE_TOOLS_METADATA",
     "SYSTEM_TOOLS_METADATA",

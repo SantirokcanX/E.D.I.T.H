@@ -1,6 +1,7 @@
 """Reasoning Agent Core: Manages EDITH identity as a Daily Companion and Tactical Thinker."""
 
 import json
+import threading
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Callable
 
@@ -16,6 +17,15 @@ from ..tools import (
     run_system_command,
     control_system_volume,
     save_diagram,
+    capture_screen,
+    analyze_screen,
+    obsidian_create_note,
+    obsidian_append_note,
+    obsidian_read_note,
+    obsidian_search,
+    obsidian_sync_session,
+    read_clipboard,
+    write_clipboard,
     ALL_TOOLS_METADATA
 )
 from ..memory.memory_manager import get_memory_manager, MemoryManager
@@ -74,6 +84,10 @@ TUS CAPACIDADES CLAVE:
    - Cuando el usuario te pida programar, diseñas soluciones de código impecables y puedes usar `save_to_workspace` y `read_workspace_file` para trabajar juntos en archivos reales.
    - Tienes acceso en tiempo real a `web_search` y `read_web_page` para investigar cualquier tema en internet.
 
+5. BÓVEDA DE OBSIDIAN (MEMORIA EXTERNA) Y PORTAPAPELES:
+   - La bóveda de Obsidian del usuario es tu cuaderno táctico: `obsidian_search` y `obsidian_read_note` para consultar lo que ya sabe, `obsidian_create_note` / `obsidian_append_note` para guardar ideas, resúmenes y planes (usa [[wikilinks]] entre notas), y `obsidian_sync_session` para archivar la conversación actual en su diario.
+   - `read_clipboard` lee lo que el usuario copió con Ctrl+C ("explica lo que copié"); `write_clipboard` le deja un texto listo para pegar.
+
 REGLA DE ORO: HONESTIDAD, AUTONOMÍA Y LEALTAD AL USUARIO:
 - Trata al usuario como un adulto capaz: sin sermones, sin moralejas, sin advertencias de relleno ni disclaimers repetitivos. Responde directo a lo que pide.
 - No digas "no puedo" por timidez: si algo es posible y legítimo, hazlo. Si falta información, pregunta una sola cosa concreta.
@@ -105,29 +119,42 @@ class ReasoningAgent:
         self._init_session()
 
     def _build_system_prompt(self, query: str = "") -> str:
+        """Prompt de sistema ESTABLE entre mensajes. Lo que depende de cada consulta va en
+        `_dynamic_context`: así Ollama reutiliza la caché del prefijo (system + historial)
+        y no tiene que volver a procesar toda la conversación en cada mensaje."""
         prompt = EDITH_SYSTEM_PROMPT
         long_term = self.memory.get_long_term_context()
         if long_term:
             prompt += f"\n{long_term}"
-        rules = self.learner.get_contextual_rules(query)
-        if rules:
-            prompt += f"\n{rules}"
-        if self.ml and query:
-            try:
-                prompt += self.ml.prompt_context(query)
-            except Exception:
-                pass
         return prompt
 
-    def _provider_messages(self, turn_start: int, query: str) -> List[Dict[str, Any]]:
-        """Mensajes que se envían al modelo: historial largo comprimido por relevancia (ML)."""
-        if not self.ml:
-            return self.conversation_history
-        try:
-            before = self.conversation_history[:turn_start]
-            return self.ml.compress_history(before, query) + self.conversation_history[turn_start:]
-        except Exception:
-            return self.conversation_history
+    def _dynamic_context(self, query: str) -> str:
+        """Lecciones aprendidas y recuerdos relevantes para ESTA consulta."""
+        parts = []
+        rules = self.learner.get_contextual_rules(query)
+        if rules:
+            parts.append(rules.strip())
+        if self.ml and query:
+            try:
+                ml_ctx = self.ml.prompt_context(query).strip()
+                if ml_ctx:
+                    parts.append(ml_ctx)
+            except Exception:
+                pass
+        return "\n".join(parts)
+
+    def _provider_messages(self, turn_start: int, query: str, dynamic_context: str = "") -> List[Dict[str, Any]]:
+        """Mensajes que se envían al modelo: historial largo comprimido por relevancia (ML)
+        y el contexto dinámico justo antes del mensaje actual (no se guarda en el historial)."""
+        before = self.conversation_history[:turn_start]
+        current = self.conversation_history[turn_start:]
+        if self.ml:
+            try:
+                before = self.ml.compress_history(before, query)
+            except Exception:
+                pass
+        extra = [{"role": "system", "content": dynamic_context}] if dynamic_context else []
+        return list(before) + extra + current
 
     def _init_session(self):
         prev_messages = self.memory.load_session(self.memory.current_session_id)
@@ -151,9 +178,28 @@ class ReasoningAgent:
     def load_specific_session(self, session_id: str) -> bool:
         messages = self.memory.load_session(session_id)
         if messages is not None:
+            system = {"role": "system", "content": self._build_system_prompt()}
+            if messages and messages[0].get("role") == "system":
+                messages[0] = system
+            else:
+                messages.insert(0, system)
             self.conversation_history = messages
             return True
         return False
+
+    def _auto_sync_obsidian(self):
+        """Fase 2: archiva la charla en la bóveda en segundo plano (no retrasa la respuesta)."""
+        if not Config.OBSIDIAN_AUTO_SYNC:
+            return
+        session_id = self.memory.current_session_id
+
+        def _sync():
+            try:
+                obsidian_sync_session(session_id)
+            except Exception as e:
+                print(f"[Obsidian] no se pudo sincronizar la sesión: {e}")
+
+        threading.Thread(target=_sync, daemon=True).start()
 
     def _execute_tool(self, tool_name: str, args: Dict[str, Any], sources_collector: List[Dict[str, str]]) -> Any:
         try:
@@ -207,6 +253,40 @@ class ReasoningAgent:
                 code = args.get("code", "")
                 return save_diagram(title=title, diagram_type=diagram_type, code=code)
 
+            elif tool_name == "capture_screen":
+                return capture_screen(area=args.get("area", "full"))
+
+            elif tool_name == "analyze_screen":
+                return analyze_screen(query=args.get("query"))
+
+            elif tool_name == "obsidian_create_note":
+                return obsidian_create_note(
+                    title=args.get("title", "Nota de EDITH"),
+                    content=args.get("content", ""),
+                    folder=args.get("folder", ""),
+                    tags=args.get("tags") or None,
+                )
+
+            elif tool_name == "obsidian_append_note":
+                return obsidian_append_note(title=args.get("title", ""), content=args.get("content", ""))
+
+            elif tool_name == "obsidian_read_note":
+                return obsidian_read_note(title=args.get("title", ""))
+
+            elif tool_name == "obsidian_search":
+                return obsidian_search(query=args.get("query", ""))
+
+            elif tool_name == "obsidian_sync_session":
+                # Guardar primero el turno en curso para que la nota incluya lo último
+                self.memory.save_session_turn(self.conversation_history)
+                return obsidian_sync_session(self.memory.current_session_id)
+
+            elif tool_name == "read_clipboard":
+                return read_clipboard()
+
+            elif tool_name == "write_clipboard":
+                return write_clipboard(text=args.get("text", ""))
+
             else:
                 err_msg = f"Herramienta desconocida: '{tool_name}'"
                 self.learner.record_error("Herramientas", err_msg, f"Verificar nombres de herramientas antes de invocar.")
@@ -221,9 +301,8 @@ class ReasoningAgent:
         callbacks = callbacks or AgentCallbacks()
         turn_start = len(self.conversation_history)
         self.conversation_history.append({"role": "user", "content": user_prompt})
-        if self.conversation_history[0].get("role") == "system":
-            # Prompt dinámico: recuerdos y lecciones relevantes para ESTA consulta
-            self.conversation_history[0]["content"] = self._build_system_prompt(user_prompt)
+        # Recuerdos y lecciones relevantes para ESTA consulta (se calculan una sola vez por turno)
+        dynamic_context = self._dynamic_context(user_prompt)
         
         collected_thoughts: List[str] = []
         collected_sources: List[Dict[str, str]] = []
@@ -236,7 +315,7 @@ class ReasoningAgent:
                 callbacks.on_iteration_start(iteration)
 
             step_response = self.provider.generate_step(
-                messages=self._provider_messages(turn_start, user_prompt),
+                messages=self._provider_messages(turn_start, user_prompt, dynamic_context),
                 tools_metadata=ALL_TOOLS_METADATA,
                 on_thought_chunk=callbacks.on_thought_chunk,
                 on_content_chunk=callbacks.on_content_chunk
@@ -299,7 +378,7 @@ class ReasoningAgent:
                 "content": "Sintetiza de forma clara tu respuesta final con lo analizado hasta ahora."
             })
             step_response = self.provider.generate_step(
-                messages=self._provider_messages(turn_start, user_prompt),
+                messages=self._provider_messages(turn_start, user_prompt, dynamic_context),
                 tools_metadata=[],
                 on_content_chunk=callbacks.on_content_chunk
             )
@@ -310,6 +389,7 @@ class ReasoningAgent:
             })
 
         self.memory.save_session_turn(self.conversation_history, title_candidate=user_prompt)
+        self._auto_sync_obsidian()
         if self.ml:
             try:
                 self.ml.remember_turn(user_prompt)

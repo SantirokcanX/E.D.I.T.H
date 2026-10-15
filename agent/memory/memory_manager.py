@@ -122,7 +122,8 @@ class MemoryManager:
             except Exception:
                 pass
 
-        if title == "Conversación" and title_candidate:
+        # Títulos genéricos se reemplazan por el primer mensaje del usuario
+        if title in ("Conversación", "Nueva conversación", "Nueva charla con EDITH") and title_candidate:
             title = title_candidate[:45] + ("..." if len(title_candidate) > 45 else "")
 
         data = {
@@ -136,8 +137,8 @@ class MemoryManager:
 
     def load_session(self, session_id: str) -> Optional[List[Dict[str, Any]]]:
         """Carga los mensajes de una sesión existente y la vuelve activa."""
-        session_path = self.sessions_dir / f"{session_id}.json"
-        if not session_path.exists():
+        session_path = self._session_path(session_id)
+        if not session_path or not session_path.exists():
             return None
         try:
             with open(session_path, "r", encoding="utf-8") as f:
@@ -147,6 +148,62 @@ class MemoryManager:
         except Exception:
             return None
 
+    def _session_path(self, session_id: str) -> Optional[Path]:
+        """Ruta del archivo de una sesión; rechaza ids que intenten salir de la carpeta."""
+        if not re.fullmatch(r"[A-Za-z0-9_\-]+", session_id or ""):
+            return None
+        return self.sessions_dir / f"{session_id}.json"
+
+    def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Devuelve la sesión completa (título, fechas y mensajes) sin cambiar la activa."""
+        path = self._session_path(session_id)
+        if not path or not path.exists():
+            return None
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            data.setdefault("id", session_id)
+            return data
+        except Exception:
+            return None
+
+    def rename_session(self, session_id: str, title: str) -> bool:
+        data = self.get_session(session_id)
+        if not data or not title.strip():
+            return False
+        data["title"] = title.strip()[:80]
+        self._write_session(session_id, data)
+        return True
+
+    def delete_session(self, session_id: str) -> bool:
+        path = self._session_path(session_id)
+        if not path or not path.exists():
+            return False
+        try:
+            path.unlink()
+        except OSError:
+            return False
+        if session_id == self.current_session_id:
+            self.current_session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        return True
+
+    def search_sessions(self, query: str) -> List[Dict[str, Any]]:
+        """Filtra sesiones cuyo título o mensajes contengan el texto buscado."""
+        q = (query or "").lower().strip()
+        if not q:
+            return self.list_sessions()
+        found = []
+        for s in self.list_sessions():
+            if q in s["title"].lower():
+                found.append(s)
+                continue
+            data = self.get_session(s["id"]) or {}
+            for m in data.get("messages", []):
+                if m.get("role") in ("user", "assistant") and q in str(m.get("content", "")).lower():
+                    found.append({**s, "match": str(m.get("content", ""))[:120]})
+                    break
+        return found
+
     def list_sessions(self) -> List[Dict[str, Any]]:
         """Devuelve una lista ordenada de todas las sesiones registradas."""
         sessions = []
@@ -154,15 +211,19 @@ class MemoryManager:
             try:
                 with open(p, "r", encoding="utf-8") as f:
                     data = json.load(f)
+                    messages = data.get("messages", [])
                     sessions.append({
                         "id": data.get("id", p.stem),
                         "title": data.get("title", "Sin título"),
+                        "created_at": data.get("created_at", ""),
                         "updated_at": data.get("updated_at", ""),
-                        "messages_count": len(data.get("messages", []))
+                        "messages_count": sum(1 for m in messages if m.get("role") in ("user", "assistant") and m.get("content"))
                     })
             except Exception:
                 continue
 
+        # Las charlas vacías (abiertas y nunca usadas) no ensucian el historial
+        sessions = [s for s in sessions if s["messages_count"] or s["id"] == getattr(self, "current_session_id", None)]
         # Ordenar por fecha de actualización descendente
         sessions.sort(key=lambda s: s.get("updated_at", ""), reverse=True)
         return sessions
