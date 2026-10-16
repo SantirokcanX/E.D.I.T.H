@@ -25,7 +25,7 @@ QR_FILE = DATA_DIR / "channels" / "whatsapp" / "qr.png"
 BRIDGE_LOG = LOGS_DIR / "whatsapp-bridge.log"
 
 router = APIRouter()
-_state = {"provider": None, "heartbeat": None, "bridge": None}
+_state = {"provider": None, "heartbeat": None, "bridge": None, "port": 8000}
 
 
 class ReminderRequest(BaseModel):
@@ -38,6 +38,7 @@ class ReminderRequest(BaseModel):
 # ---------------- ciclo de vida ----------------
 def start_channels(provider, ui_broadcast, loop: asyncio.AbstractEventLoop, port: int = 8000):
     _state["provider"] = provider
+    _state["port"] = port
     telephony.set_provider(provider)
     notifier.register_ui(ui_broadcast, loop)
     if Config.HEARTBEAT_ENABLED:
@@ -54,6 +55,31 @@ def stop_channels():
     proc = _state["bridge"]
     if proc and proc.poll() is None:
         proc.terminate()
+
+
+def restart_bridge():
+    """Ajustes cambió WhatsApp o los números autorizados: reinicia (o apaga) el bridge."""
+    proc = _state["bridge"]
+    if proc and proc.poll() is None:
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+    _state["bridge"] = None
+    if Config.WHATSAPP_ENABLED and Config.AUTHORIZED_PHONE_NUMBERS:
+        _start_bridge(_state["port"])
+
+
+def toggle_heartbeat(enabled: bool):
+    hb = _state["heartbeat"]
+    if enabled:
+        if not hb:
+            hb = Heartbeat(_state["provider"], notifier)
+            _state["heartbeat"] = hb
+        hb.start()
+    elif hb:
+        hb.stop()
 
 
 def _start_bridge(port: int):

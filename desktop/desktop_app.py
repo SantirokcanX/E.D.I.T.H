@@ -101,6 +101,26 @@ html,body{margin:0;height:100%;background:#0a0a0f;color:#ece9f5;font-family:'Seg
 <body><div class="c"><div class="d"></div><h2 style="margin:0">EDITH</h2><p>Iniciando…</p></div></body></html>"""
 
 
+class DesktopApi:
+    """Funciones nativas que la interfaz puede llamar con window.pywebview.api.* (Fase 15.2)."""
+
+    def __init__(self, app: "DesktopApp"):
+        self._app = app
+
+    def pick_folder(self, initial: str = ""):
+        import webview
+        start = initial if initial and Path(initial).is_dir() else str(Path.home() / "Documents")
+        result = self._app.window.create_file_dialog(webview.FileDialog.FOLDER, directory=start)
+        return result[0] if result else None
+
+    def open_url(self, url: str):
+        if isinstance(url, str) and url.startswith(("https://", "http://")):
+            import webbrowser
+            webbrowser.open(url)
+            return True
+        return False
+
+
 class DesktopApp:
     def __init__(self):
         self.window = None
@@ -111,12 +131,15 @@ class DesktopApp:
         self.quitting = False
         self.hidden_notice_shown = False
         self.hotkey_thread_id = None
+        # --tray: arranque con Windows, directo a la bandeja sin mostrar la ventana
+        self.start_hidden = "--tray" in sys.argv
 
     # ------------------------------------------------ servidor
     def start_server(self):
         import uvicorn
         self.port = pick_port()
-        os.environ["EDITH_PORT"] = str(self.port)  # lo usan el bridge de WhatsApp y el Heartbeat
+        os.environ["EDITH_RUNTIME_PORT"] = str(self.port)  # lo usan el bridge de WhatsApp y el Heartbeat
+        os.environ["EDITH_DESKTOP"] = "1"  # Ajustes muestra opciones solo de escritorio (iniciar con Windows)
         config = uvicorn.Config("ide.server:app", host="127.0.0.1", port=self.port,
                                 log_level="warning", log_config=None)
         self.server = uvicorn.Server(config)
@@ -192,6 +215,13 @@ class DesktopApp:
             visible = False
         self.hide() if visible else self.show()
 
+    def open_settings(self):
+        self.show()
+        try:
+            self.window.evaluate_js("typeof EdithSetup !== 'undefined' && EdithSetup.openSettings()")
+        except Exception:
+            pass
+
     def new_chat(self):
         self.show()
         try:
@@ -215,6 +245,7 @@ class DesktopApp:
         menu = pystray.Menu(
             pystray.MenuItem("Abrir EDITH", lambda: self.show(), default=True),
             pystray.MenuItem("Nueva conversación", lambda: self.new_chat()),
+            pystray.MenuItem("Ajustes", lambda: self.open_settings()),
             pystray.MenuItem(pause_label, toggle_pause),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Abrir carpeta de datos", lambda: os.startfile(str(EDITH_HOME))),
@@ -306,7 +337,10 @@ class DesktopApp:
         self.start_server()
 
         self.window = webview.create_window(
-            "EDITH", html=LOADING_HTML, width=1320, height=880, min_size=(960, 640), background_color="#0a0a0f")
+            "EDITH", html=LOADING_HTML, width=1320, height=880, min_size=(960, 640), background_color="#0a0a0f",
+            hidden=self.start_hidden, js_api=DesktopApi(self))
+        if self.start_hidden:
+            self.hidden_notice_shown = True  # al iniciar con Windows no hace falta avisar
         self.window.events.closing += self.on_closing
         self.window.events.shown += self.on_shown
 

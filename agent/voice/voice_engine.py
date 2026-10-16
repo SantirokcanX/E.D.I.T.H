@@ -53,6 +53,9 @@ class VoiceEngine:
     DEFAULT_VOICE_KEY = "elvira"
 
     def __init__(self, voice_key: Optional[str] = None, output_dir: Optional[str] = None, enabled: bool = True):
+        if voice_key is None:  # la voz elegida en Ajustes (EDITH_VOICE)
+            from ..config import Config
+            voice_key = getattr(Config, "EDITH_VOICE", None)
         self.voice_key = voice_key if voice_key in self.VOICES else self.DEFAULT_VOICE_KEY
         self.enabled = enabled
         from ..paths import DATA_DIR

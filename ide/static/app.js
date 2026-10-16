@@ -6,6 +6,7 @@ let voiceEnabled = true;
 let activeFilePath = "notas_del_dia.md";
 let recognition = null;
 let wakeWordActive = true;
+let wakeFailures = 0;     // fallos seguidos del reconocimiento de voz
 let isListeningForCommand = false;
 let activeSessionId = null;
 let streamingEl = null;   // burbuja donde se escribe la respuesta token a token
@@ -92,6 +93,7 @@ function initSpeechRecognition() {
       transcript += event.results[i][0].transcript;
     }
     const clean = transcript.toLowerCase().trim();
+    wakeFailures = 0;
 
     const wakeKeywords = ["edith", "oye edith", "hey edith", "hola edith", "edit", "oye edit"];
     const containsWake = wakeKeywords.some(w => clean.includes(w));
@@ -110,14 +112,23 @@ function initSpeechRecognition() {
   };
 
   recognition.onerror = (e) => {
-    if (e.error !== "no-speech") {
-      console.warn("Error en reconocimiento de voz:", e.error);
+    if (e.error === "no-speech" || e.error === "aborted") return;
+    console.warn("Error en reconocimiento de voz:", e.error);
+    // Sin permiso de micrófono o sin servicio de voz (p. ej. dentro de WebView2): reintentar
+    // solo genera un bucle de errores, así que se pausa hasta que el usuario lo reactive.
+    if (["not-allowed", "service-not-allowed", "audio-capture"].includes(e.error)) {
+      setWakeWord(false, `🔇 "Oye EDITH" sin micrófono`);
+    } else if (++wakeFailures >= 3) {
+      setWakeWord(false, `🔇 "Oye EDITH" sin servicio de voz`);
     }
   };
 
   recognition.onend = () => {
     if (wakeWordActive) {
-      try { recognition.start(); } catch (err) {}
+      // Espera creciente tras fallos para no reiniciar en bucle
+      setTimeout(() => {
+        if (wakeWordActive) { try { recognition.start(); } catch (err) {} }
+      }, 300 * (wakeFailures + 1));
     }
   };
 
@@ -126,6 +137,14 @@ function initSpeechRecognition() {
   } catch (err) {
     console.log("Inicio de reconocimiento diferido:", err);
   }
+}
+
+function setWakeWord(active, label) {
+  wakeWordActive = active;
+  const btn = document.getElementById("btnWakeWord");
+  if (btn) btn.classList.toggle("active", active);
+  const lbl = document.getElementById("wakeWordLabel");
+  if (lbl) lbl.innerText = label || (active ? `🎙️ "Oye EDITH" Activo` : `🔇 "Oye EDITH" Pausa`);
 }
 
 function triggerWakeAction(spokenText) {
@@ -1031,14 +1050,11 @@ function setupEventListeners() {
   // Wake Word Toggle
   const btnWake = document.getElementById("btnWakeWord");
   btnWake.addEventListener("click", () => {
-    wakeWordActive = !wakeWordActive;
+    wakeFailures = 0;
+    setWakeWord(!wakeWordActive);
     if (wakeWordActive) {
-      btnWake.classList.add("active");
-      document.getElementById("wakeWordLabel").innerText = `🎙️ "Oye EDITH" Activo`;
       try { recognition.start(); } catch (err) {}
     } else {
-      btnWake.classList.remove("active");
-      document.getElementById("wakeWordLabel").innerText = `🔇 "Oye EDITH" Pausa`;
       try { recognition.stop(); } catch (err) {}
     }
   });

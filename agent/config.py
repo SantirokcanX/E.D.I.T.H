@@ -63,6 +63,8 @@ class Config:
         cls.OBSIDIAN_VAULT_PATH = os.getenv("OBSIDIAN_VAULT_PATH", "").strip() or _default_vault()
         cls.OBSIDIAN_AUTO_SYNC = _flag("OBSIDIAN_AUTO_SYNC", "false")
 
+        # Voz elegida en Ajustes (elvira, dalia, ximena, salome)
+        cls.EDITH_VOICE = os.getenv("EDITH_VOICE", "elvira").strip().lower()
         # Voz: si edge-tts falla (sin internet), usar las voces SAPI5 de Windows
         cls.VOICE_OFFLINE_FALLBACK = _flag("VOICE_OFFLINE_FALLBACK", "true")
 

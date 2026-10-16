@@ -27,6 +27,7 @@ from agent.tools.obsidian_tools import get_vault_path, sync_edith_session, searc
 from agent.channels.security import get_api_token
 from ide.auth import AccessGuard
 from ide.channels_api import router as channels_router, start_channels, stop_channels
+from ide.setup_api import router as setup_router
 
 try:  # ML opcional
     from agent.ml import get_ml_engine, ROUTES as ML_ROUTES
@@ -537,7 +538,8 @@ async def broadcast_ui(event: dict):
 
 @app.on_event("startup")
 async def _startup_channels():
-    port = int(os.getenv("EDITH_PORT", "8000"))
+    # Puerto en uso (lo fija main.py o la app de escritorio); EDITH_PORT es solo el ajuste del usuario
+    port = int(os.getenv("EDITH_RUNTIME_PORT") or "8000")
     get_api_token()  # se genera aquí la primera vez, no en la primera petición
     print("[Seguridad] Interfaz y API protegidas con token. Para entrar desde otro dispositivo: "
           "python main.py --access-link")
@@ -550,4 +552,5 @@ async def _shutdown_channels():
 
 
 app.include_router(channels_router)
+app.include_router(setup_router)  # Fase 15.2: asistente de primer arranque y Ajustes
 app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")

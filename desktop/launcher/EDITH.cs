@@ -35,7 +35,10 @@ static class Launcher
             return 1;
         }
 
-        var psi = new ProcessStartInfo(pythonw, "\"" + app + "\"");
+        // Reenvía los argumentos (p. ej. --tray al iniciar con Windows)
+        string extra = "";
+        foreach (string a in args) extra += " \"" + a.Replace("\"", "") + "\"";
+        var psi = new ProcessStartInfo(pythonw, "\"" + app + "\"" + extra);
         psi.WorkingDirectory = root;
         psi.UseShellExecute = false;
         Process.Start(psi);

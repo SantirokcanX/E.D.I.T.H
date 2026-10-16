@@ -80,7 +80,7 @@ def parse_args():
 def start_ide(port: int = 8000):
     print(f"\n👓 Iniciando EDITH Studio (Web IDE)...")
     print(f"👉 Abre tu navegador en: http://localhost:{port}\n")
-    os.environ["EDITH_PORT"] = str(port)  # el bridge de WhatsApp necesita saber dónde está EDITH
+    os.environ["EDITH_RUNTIME_PORT"] = str(port)  # el bridge de WhatsApp necesita saber dónde está EDITH
     uvicorn.run("ide.server:app", host="127.0.0.1", port=port, log_level="info")
 
 

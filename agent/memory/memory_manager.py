@@ -240,7 +240,10 @@ class MemoryManager:
 
     def get_long_term_context(self) -> str:
         """Construye un bloque de memoria a largo plazo para inyectar a EDITH."""
-        facts = self.long_term_data.get("known_facts", [])
+        facts = list(self.long_term_data.get("known_facts", []))
+        name = self.long_term_data.get("user_name", "")
+        if name and name != "Usuario":  # nombre elegido en el asistente de primer arranque
+            facts.insert(0, f"El usuario se llama {name}. Llámalo por su nombre con naturalidad.")
         if not facts:
             return ""
 
