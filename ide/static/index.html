@@ -5,12 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>EDITH</title>
   <link rel="icon" type="image/png" href="logo.png" />
-  <link rel="stylesheet" href="styles.css?v=0.0.5" />
+  <link rel="stylesheet" href="styles.css?v=0.0.7" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <!-- Markdown parser -->
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <!-- DOMPurify (Fase 14): sanea el HTML de cada respuesta antes de mostrarla. Versión fija + SRI. -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.4.16/purify.min.js"
+          integrity="sha512-flQmhkXNRQ3iUfvtdCobtpMjCb6kE+zLnTiAulAQJ3WykVfy84JvCMOo6vhwWXHTXjR25h9Zj+LyGFRWKjRoag=="
+          crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <!-- KaTeX: fórmulas matemáticas en LaTeX -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
   <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
@@ -268,9 +272,24 @@ mindmap
   </div>
 
   <div class="toast-stack" id="toastStack" aria-live="polite"></div>
+
+  <!-- Fase 14: EDITH pide permiso antes de ejecutar comandos o abrir apps -->
+  <div class="confirm-backdrop" id="confirmBackdrop" hidden>
+    <div class="confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmReason">
+      <div class="confirm-title" id="confirmTitle">EDITH quiere ejecutar:</div>
+      <pre class="confirm-command" id="confirmCommand"></pre>
+      <p class="confirm-reason" id="confirmReason"></p>
+      <p class="confirm-question">¿Autorizas?</p>
+      <div class="confirm-actions">
+        <button type="button" class="btn-deny" id="btnConfirmDeny">Rechazar</button>
+        <button type="button" class="btn-allow" id="btnConfirmAllow">Autorizar</button>
+      </div>
+      <div class="confirm-timer" id="confirmTimer"></div>
+    </div>
+  </div>
   <audio id="edithAudio" preload="auto"></audio>
 
-  <script src="render.js?v=0.0.5"></script>
-  <script src="app.js?v=0.0.5"></script>
+  <script src="render.js?v=0.0.7"></script>
+  <script src="app.js?v=0.0.7"></script>
 </body>
 </html>

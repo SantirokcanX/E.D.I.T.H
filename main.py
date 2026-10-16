@@ -64,6 +64,11 @@ def parse_args():
         help="Mostrar qué ruta elegiría el ML y qué recuerdos recuperaría para TEXTO, y salir."
     )
     parser.add_argument(
+        "--access-link",
+        action="store_true",
+        help="Mostrar el enlace con token para abrir EDITH Studio desde otro dispositivo y salir."
+    )
+    parser.add_argument(
         "--query", "-q",
         type=str,
         default=None,
@@ -103,6 +108,14 @@ def main():
     args = parse_args()
 
     if run_ml_tools(args):
+        return
+
+    if args.access_link:
+        from ide.auth import access_links
+        print("Enlace de acceso a EDITH Studio (contiene el token: no lo compartas):")
+        for link in access_links(args.port):
+            print(f"  {link}")
+        print("Desde la propia máquina basta con abrir http://localhost:%d (entra sola)." % args.port)
         return
 
     if args.no_ml:

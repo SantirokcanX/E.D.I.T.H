@@ -2,8 +2,67 @@
 //
 // Las fórmulas se extraen ANTES de pasar el texto por marked: si no, marked interpreta
 // `_`, `*` y `\` dentro de la fórmula como Markdown y la rompe (p. ej. `\frac` → `frac`).
+//
+// Fase 14: todo el HTML resultante pasa por DOMPurify antes de insertarse. El texto lo escribe
+// el modelo y puede venir influido por una web o un archivo: nada de <script>, atributos onclick/
+// onerror, enlaces javascript:, <style> que tape la interfaz ni imágenes externas que filtren datos.
 
 const EdithRender = (() => {
+  const PURIFY_CONFIG = {
+    FORBID_TAGS: ["style", "link", "meta", "base", "form", "input", "button", "textarea", "select", "option",
+                  "iframe", "frame", "object", "embed", "audio", "video", "source", "track", "picture", "image", "use"],
+    // id/name: el contenido no puede hacerse pasar por elementos de la interfaz (p. ej. el modal "¿Autorizas?")
+    FORBID_ATTR: ["id", "name", "background", "srcset", "poster", "ping", "formaction"],
+  };
+  // CSS en línea que KaTeX no usa y que serviría para tapar la interfaz o cargar recursos externos
+  const UNSAFE_STYLE = /url\s*\(|expression\s*\(|@import|position\s*:\s*(fixed|sticky)/i;
+  let purifyReady = false;
+
+  function setupPurify() {
+    if (purifyReady || !window.DOMPurify) return !!window.DOMPurify;
+    DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+      if (node.hasAttribute && node.hasAttribute("style") && UNSAFE_STYLE.test(node.getAttribute("style"))) {
+        node.removeAttribute("style");
+      }
+      if (node.tagName === "A" && node.hasAttribute("href")) {
+        node.setAttribute("target", "_blank"); // un enlace nunca saca a EDITH de su pestaña
+        node.setAttribute("rel", "noopener noreferrer");
+      }
+    });
+    purifyReady = true;
+    return true;
+  }
+
+  function sanitize(html) {
+    const clean = DOMPurify.sanitize(html, PURIFY_CONFIG);
+    // Imágenes de otros servidores: se cambian por un enlace (cargarlas solas podría enviar datos
+    // en la URL). Dentro de <template> nada se descarga mientras se revisa.
+    const tpl = document.createElement("template");
+    tpl.innerHTML = clean;
+    tpl.content.querySelectorAll("img").forEach((img) => {
+      const src = img.getAttribute("src") || "";
+      let external = true;
+      try {
+        const u = new URL(src, window.location.href);
+        external = u.origin !== window.location.origin && u.protocol !== "data:";
+      } catch (e) {}
+      if (!external) return;
+      const a = document.createElement("a");
+      a.textContent = `🖼️ ${img.getAttribute("alt") || "imagen externa"} (no se cargó: ábrela si confías en ella)`;
+      if (/^https?:/i.test(src)) {
+        a.href = src;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+      }
+      img.replaceWith(a);
+    });
+    return tpl.innerHTML;
+  }
+
+  /** Sin las librerías (p. ej. sin internet) se muestra texto plano: nunca HTML sin sanear. */
+  function plainHtml(text) {
+    return `<p>${escapeAttr(text || "").replace(/\n/g, "<br>")}</p>`;
+  }
   // Segmentos de código (no se busca LaTeX dentro de ellos)
   const CODE_RE = /(```[\s\S]*?(?:```|$)|`[^`\n]+`)/g;
   // Orden importa: primero los delimitadores de bloque
@@ -54,12 +113,12 @@ const EdithRender = (() => {
     return html.replace(/EDITHMATH(\d+)X/g, (m, i) => store[+i] ?? m);
   }
 
-  /** Markdown + LaTeX → HTML. */
+  /** Markdown + LaTeX → HTML saneado. */
   function toHtml(markdown) {
+    if (!window.marked || !setupPurify()) return plainHtml(markdown);
     const store = [];
     const protectedText = protectMath(markdown || "", store);
-    const parse = window.marked ? (s) => marked.parse(s) : (s) => s;
-    return restoreMath(parse(protectedText), store);
+    return sanitize(restoreMath(marked.parse(protectedText), store));
   }
 
   /** Resaltado + cabecera (lenguaje, Copiar, Guardar) para cada bloque de código del elemento. */

@@ -8,6 +8,7 @@ from rich.markdown import Markdown
 from rich.table import Table
 from rich.live import Live
 from rich.text import Text
+from rich.prompt import Confirm
 
 from ..config import Config
 from ..providers import get_provider
@@ -215,15 +216,40 @@ class AgentCLI:
             elif tool_name == "save_to_workspace":
                 self.console.print(f"  [dim green]✓ Archivo actualizado en el workspace.[/dim green]")
 
+        status = None
+
+        def on_confirm(tool_name: str, args: Dict[str, Any], reason: str) -> bool:
+            # Fase 14: el agente espera a que el usuario autorice la acción en la terminal
+            nonlocal current_live
+            if current_live:
+                current_live.stop()
+                current_live = None
+            if status:
+                status.stop()
+            self.console.print(Panel(
+                Text(f"{tool_name}: {args}\n\n{reason}"),
+                title="⚠️ EDITH quiere ejecutar",
+                border_style="red",
+                padding=(0, 1)
+            ))
+            try:
+                return Confirm.ask("¿Autorizas?", default=False, console=self.console)
+            except (EOFError, KeyboardInterrupt):
+                return False
+            finally:
+                if status:
+                    status.start()
+
         callbacks = AgentCallbacks(
             on_iteration_start=on_iteration_start,
             on_thought_chunk=on_thought_chunk,
             on_thought_end=on_thought_end,
             on_tool_call=on_tool_call,
-            on_tool_result=on_tool_result
+            on_tool_result=on_tool_result,
+            on_confirm=on_confirm
         )
 
-        with self.console.status("[bold cyan]EDITH pensando...", spinner="dots"):
+        with self.console.status("[bold cyan]EDITH pensando...", spinner="dots") as status:
             try:
                 run_result = self.agent.run(user_prompt=user_query, callbacks=callbacks)
             except Exception as e:

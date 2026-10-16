@@ -110,5 +110,12 @@ class Config:
         cls.HEARTBEAT_NEWS_TOPICS = [t.strip() for t in os.getenv("HEARTBEAT_NEWS_TOPICS", "").split(",") if t.strip()]
         cls.NOTIFY_CHANNELS = [c.strip() for c in os.getenv("NOTIFY_CHANNELS", "ui,toast,whatsapp").split(",") if c.strip()]
 
+        # --- Seguridad de la interfaz y la API (Fase 14) ---
+        # Nombres o IPs extra con los que se puede llegar a EDITH (Tailscale, IP de la red local...).
+        # localhost/127.0.0.1 y el host de PUBLIC_BASE_URL ya están permitidos.
+        cls.EDITH_ALLOWED_HOSTS = [h.strip().lower() for h in os.getenv("EDITH_ALLOWED_HOSTS", "").split(",") if h.strip()]
+        # true = al abrir la interfaz desde la propia máquina (127.0.0.1) entra sin pedir el enlace con token
+        cls.EDITH_LOCAL_AUTOLOGIN = _flag("EDITH_LOCAL_AUTOLOGIN", "true")
+
 
 Config.reload()

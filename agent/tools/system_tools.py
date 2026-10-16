@@ -1,44 +1,55 @@
 """Laptop OS manipulation and Computer Control tools for EDITH."""
 
 import os
+import shutil
 import subprocess
 import ctypes
 from typing import Dict, Any, Optional
 import psutil
+
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)  # solo existe en Windows
+
+# Nombres conocidos -> qué se abre. Los botones del panel "Laptop" solo pueden lanzar estos.
+APP_ALIASES = {
+    "calc": "calc.exe",
+    "calculadora": "calc.exe",
+    "notepad": "notepad.exe",
+    "bloc de notas": "notepad.exe",
+    "chrome": "chrome.exe",
+    "navegador": "https://www.google.com",
+    "spotify": "spotify",
+    "explorer": "explorer.exe",
+    "archivos": "explorer.exe",
+    "vscode": "code",
+    "code": "code",
+    "terminal": "powershell.exe",
+    "powershell": "powershell.exe",
+    "cmd": "cmd.exe",
+    "paint": "mspaint.exe",
+}
 
 
 def open_application(app_name: str) -> str:
     """
     Abre una aplicación instalada en la laptop de Windows.
     Ejemplos: 'calc', 'notepad', 'chrome', 'spotify', 'explorer', 'code'.
-    """
-    app_lower = app_name.lower().strip()
-    
-    app_mappings = {
-        "calc": "calc.exe",
-        "calculadora": "calc.exe",
-        "notepad": "notepad.exe",
-        "bloc de notas": "notepad.exe",
-        "chrome": "chrome",
-        "navegador": "https://www.google.com",
-        "spotify": "spotify",
-        "explorer": "explorer.exe",
-        "archivos": "explorer.exe",
-        "vscode": "code",
-        "code": "code",
-        "terminal": "powershell.exe",
-        "powershell": "powershell.exe",
-        "cmd": "cmd.exe",
-        "paint": "mspaint.exe"
-    }
 
-    target = app_mappings.get(app_lower, app_name)
+    Sin shell: el nombre nunca se interpreta como una línea de comandos (antes, con shell=True,
+    "notepad & del archivo" ejecutaba también el borrado). Se abre con ShellExecute
+    (os.startfile), que resuelve programas del PATH, "App Paths" (chrome.exe), URLs y archivos.
+    """
+    name = app_name.strip()
+    target = APP_ALIASES.get(name.lower(), name)
+    if not target:
+        return "No se indicó qué aplicación abrir."
 
     try:
-        if target.startswith("http://") or target.startswith("https://") or os.path.exists(target):
-            os.startfile(target)
+        path = shutil.which(target)
+        if path and path.lower().endswith((".cmd", ".bat")):
+            # Lanzadores de consola (p. ej. code.cmd de VS Code): sin argumentos, sin shell y sin ventana negra
+            subprocess.Popen([path], creationflags=NO_WINDOW)
         else:
-            subprocess.Popen(target, shell=True)
+            os.startfile(path or target)
         return f"Aplicación '{app_name}' iniciada correctamente en tu laptop."
     except Exception as e:
         return f"No se pudo iniciar '{app_name}': {str(e)}"
@@ -96,7 +107,8 @@ def run_system_command(command: str) -> str:
             ["powershell", "-NoProfile", "-Command", command],
             capture_output=True,
             text=True,
-            timeout=25
+            timeout=25,
+            creationflags=NO_WINDOW,  # EDITH corre sin consola: que no parpadee una ventana negra
         )
         output = proc.stdout if proc.stdout else proc.stderr
         output = output.strip()

@@ -3,9 +3,10 @@
 import asyncio
 import json
 import os
+import secrets
 import threading
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
@@ -20,8 +21,11 @@ from agent.voice.voice_engine import get_voice_engine
 from agent.memory.memory_manager import get_memory_manager
 from agent.learning.error_learner import get_error_learner
 from agent.tools.workspace_tools import WORKSPACE_DIR, save_to_workspace, read_workspace_file, list_workspace_files
-from agent.tools.system_tools import get_system_status, open_application, run_system_command, control_system_volume
+from agent.tools.system_tools import (get_system_status, open_application, run_system_command,
+                                      control_system_volume, APP_ALIASES)
 from agent.tools.obsidian_tools import get_vault_path, sync_edith_session, search_vault
+from agent.channels.security import get_api_token
+from ide.auth import AccessGuard
 from ide.channels_api import router as channels_router, start_channels, stop_channels
 
 try:  # ML opcional
@@ -39,7 +43,16 @@ async def revalidate_static(request, call_next):
     response = await call_next(request)
     if not request.url.path.startswith("/api/"):
         response.headers["Cache-Control"] = "no-cache"
+    # Nadie puede incrustar EDITH en un iframe (p. ej. para engañar al usuario con el botón "Autorizar")
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Content-Security-Policy"] = "frame-ancestors 'none'"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "same-origin"
     return response
+
+
+# Fase 14: token, Host y Origin. Se añade el último para que sea la capa más externa.
+app.add_middleware(AccessGuard)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -103,6 +116,9 @@ def api_system_status():
 
 @app.post("/api/system/app")
 def api_system_app(req: SystemAppRequest):
+    # Los botones del panel solo lanzan las apps conocidas: la ruta no sirve para ejecutar cualquier cosa
+    if req.app_name.lower().strip() not in APP_ALIASES:
+        raise HTTPException(status_code=400, detail="Aplicación no disponible desde el panel")
     res = open_application(req.app_name)
     return {"result": res}
 
@@ -291,152 +307,29 @@ async def send_voice(websocket: WebSocket, text: str):
         pass
 
 
+CONFIRM_TIMEOUT_SECONDS = 120  # sin respuesta del usuario, la acción se rechaza sola
+
+
 @app.websocket("/ws/chat")
 async def websocket_chat(websocket: WebSocket):
+    """Lee los mensajes de la pestaña sin bloquearse: las consultas van a una cola que se atiende
+    en orden y las respuestas a "¿Autorizas?" llegan mientras el agente espera."""
     await websocket.accept()
     ui_clients.add(websocket)
+    queries: asyncio.Queue = asyncio.Queue()
+    pending: Dict[str, asyncio.Future] = {}  # confirmaciones de ESTA pestaña esperando respuesta
+    worker = asyncio.create_task(_chat_worker(websocket, queries, pending))
 
     try:
         while True:
-            data = await websocket.receive_text()
-            payload = json.loads(data)
+            payload = json.loads(await websocket.receive_text())
             action = payload.get("action", "query")
-            
-            if action == "query":
-                user_prompt = payload.get("prompt", "").strip()
-                mode = payload.get("mode", "standard")
-                # Razonamiento: "fast" = directo, "deep" = pensar a fondo, "auto" = EDITH decide
-                reasoning = payload.get("reasoning", "auto")
-                think_choice = {"fast": False, "deep": True}.get(reasoning)
-                speak_response = payload.get("speak", True)
-
-                if not user_prompt:
-                    continue
-
-                ml_analysis = None
-                if ml_engine:
-                    try:
-                        ml_analysis = ml_engine.analyze(user_prompt)
-                        if mode == "auto":  # el ML decide entre chat directo y equipo
-                            mode = ("coworking"
-                                    if ml_analysis.route == "coworking"
-                                    and ml_analysis.confidence >= Config.ML_AUTO_THRESHOLD
-                                    else "standard")
-                            await websocket.send_json({
-                                "type": "ml_route",
-                                "route": ml_analysis.route,
-                                "confidence": round(ml_analysis.confidence, 3),
-                                "mode": mode
-                            })
-                    except Exception:
-                        ml_analysis = None
-                if mode == "auto":
-                    mode = "standard"
-                if ml_engine:
-                    ml_engine.log_query(user_prompt, ml_analysis.route if ml_analysis else None,
-                                        mode == "coworking")
-
-                if mode == "coworking":
-                    await websocket.send_json({
-                        "type": "status",
-                        "text": "Activando protocolo de Co-Working en equipo (EDITH, Scout y Auditor)..."
-                    })
-
-                    loop = asyncio.get_event_loop()
-
-                    def on_team_event(event: TeamMemberEvent):
-                        asyncio.run_coroutine_threadsafe(
-                            websocket.send_json({
-                                "type": "team_event",
-                                "member": event.member,
-                                "role": event.role,
-                                "content": event.content,
-                                "action_type": event.action_type
-                            }),
-                            loop
-                        )
-
-                    result = await loop.run_in_executor(
-                        None,
-                        lambda: coworking_team.collaborate(
-                            user_prompt,
-                            on_event=on_team_event,
-                            context=ml_analysis.context if ml_analysis else ""
-                        )
-                    )
-                    if ml_engine:
-                        ml_engine.remember_turn(user_prompt)
-
-                    await websocket.send_json({
-                        "type": "final_answer",
-                        "content": result["answer"],
-                        "sources": result.get("sources", []),
-                        "session_id": memory_manager.current_session_id
-                    })
-                    if speak_response and voice_engine.enabled and result.get("answer"):
-                        await send_voice(websocket, result["answer"])
-
-                else:
-                    loop = asyncio.get_event_loop()
-
-                    def on_iteration_start(it: int):
-                        asyncio.run_coroutine_threadsafe(
-                            websocket.send_json({"type": "iteration_start", "iteration": it}),
-                            loop
-                        )
-
-                    def on_thought_chunk(chunk: str):
-                        asyncio.run_coroutine_threadsafe(
-                            websocket.send_json({"type": "thought_chunk", "chunk": chunk}),
-                            loop
-                        )
-
-                    def on_content_chunk(chunk: str):
-                        asyncio.run_coroutine_threadsafe(
-                            websocket.send_json({"type": "content_chunk", "chunk": chunk}),
-                            loop
-                        )
-
-                    def on_tool_call(tool: str, args: dict):
-                        asyncio.run_coroutine_threadsafe(
-                            websocket.send_json({"type": "tool_call", "tool": tool, "args": args}),
-                            loop
-                        )
-
-                    def on_tool_result(tool: str, output: any):
-                        count = len(output) if isinstance(output, list) else 1
-                        asyncio.run_coroutine_threadsafe(
-                            websocket.send_json({"type": "tool_result", "tool": tool, "count": count}),
-                            loop
-                        )
-
-                    callbacks = AgentCallbacks(
-                        on_iteration_start=on_iteration_start,
-                        on_thought_chunk=on_thought_chunk,
-                        on_content_chunk=on_content_chunk,
-                        on_tool_call=on_tool_call,
-                        on_tool_result=on_tool_result
-                    )
-
-                    deep = edith_agent.resolve_think(user_prompt, think_choice)
-                    await websocket.send_json({"type": "reasoning", "deep": deep})
-
-                    res = await loop.run_in_executor(
-                        None,
-                        lambda: edith_agent.run(user_prompt, callbacks=callbacks, think=deep)
-                    )
-
-                    await websocket.send_json({
-                        "type": "final_answer",
-                        "content": res.answer,
-                        "thoughts": res.thoughts,
-                        "sources": res.sources,
-                        "deep": res.deep_thinking,
-                        "session_id": memory_manager.current_session_id
-                    })
-                    if speak_response and voice_engine.enabled and res.answer:
-                        await send_voice(websocket, res.answer)
-
+            if action == "confirm":
+                fut = pending.get(str(payload.get("id", "")))
+                if fut and not fut.done():
+                    fut.set_result(payload.get("approved") is True)
+            elif action == "query":
+                await queries.put(payload)
     except WebSocketDisconnect:
         pass
     except Exception as e:
@@ -446,6 +339,187 @@ async def websocket_chat(websocket: WebSocket):
             pass
     finally:
         ui_clients.discard(websocket)
+        for fut in pending.values():  # pestaña cerrada = acción rechazada
+            if not fut.done():
+                fut.set_result(False)
+        worker.cancel()
+
+
+async def _chat_worker(websocket: WebSocket, queries: asyncio.Queue, pending: Dict[str, asyncio.Future]):
+    while True:
+        payload = await queries.get()
+        try:
+            await _handle_query(websocket, payload, pending)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            try:
+                await websocket.send_json({"type": "error", "message": str(e)})
+            except Exception:
+                pass
+
+
+async def _ask_confirmation(websocket: WebSocket, pending: Dict[str, asyncio.Future],
+                            tool: str, args: Dict[str, Any], reason: str) -> bool:
+    """Muestra el modal "EDITH quiere ejecutar: … ¿Autorizas?" y espera la respuesta."""
+    req_id = secrets.token_urlsafe(9)
+    fut = asyncio.get_running_loop().create_future()
+    pending[req_id] = fut
+    try:
+        await websocket.send_json({"type": "confirm_request", "id": req_id, "tool": tool, "args": args,
+                                   "reason": reason, "timeout": CONFIRM_TIMEOUT_SECONDS})
+        return await asyncio.wait_for(fut, CONFIRM_TIMEOUT_SECONDS)
+    except Exception:  # sin respuesta a tiempo o pestaña cerrada
+        try:
+            await websocket.send_json({"type": "confirm_expired", "id": req_id})
+        except Exception:
+            pass
+        return False
+    finally:
+        pending.pop(req_id, None)
+
+
+async def _handle_query(websocket: WebSocket, payload: Dict[str, Any], pending: Dict[str, asyncio.Future]):
+    user_prompt = payload.get("prompt", "").strip()
+    mode = payload.get("mode", "standard")
+    # Razonamiento: "fast" = directo, "deep" = pensar a fondo, "auto" = EDITH decide
+    reasoning = payload.get("reasoning", "auto")
+    think_choice = {"fast": False, "deep": True}.get(reasoning)
+    speak_response = payload.get("speak", True)
+
+    if not user_prompt:
+        return
+
+    ml_analysis = None
+    if ml_engine:
+        try:
+            ml_analysis = ml_engine.analyze(user_prompt)
+            if mode == "auto":  # el ML decide entre chat directo y equipo
+                mode = ("coworking"
+                        if ml_analysis.route == "coworking"
+                        and ml_analysis.confidence >= Config.ML_AUTO_THRESHOLD
+                        else "standard")
+                await websocket.send_json({
+                    "type": "ml_route",
+                    "route": ml_analysis.route,
+                    "confidence": round(ml_analysis.confidence, 3),
+                    "mode": mode
+                })
+        except Exception:
+            ml_analysis = None
+    if mode == "auto":
+        mode = "standard"
+    if ml_engine:
+        ml_engine.log_query(user_prompt, ml_analysis.route if ml_analysis else None,
+                            mode == "coworking")
+
+    loop = asyncio.get_running_loop()
+
+    if mode == "coworking":
+        await websocket.send_json({
+            "type": "status",
+            "text": "Activando protocolo de Co-Working en equipo (EDITH, Scout y Auditor)..."
+        })
+
+        def on_team_event(event: TeamMemberEvent):
+            asyncio.run_coroutine_threadsafe(
+                websocket.send_json({
+                    "type": "team_event",
+                    "member": event.member,
+                    "role": event.role,
+                    "content": event.content,
+                    "action_type": event.action_type
+                }),
+                loop
+            )
+
+        result = await loop.run_in_executor(
+            None,
+            lambda: coworking_team.collaborate(
+                user_prompt,
+                on_event=on_team_event,
+                context=ml_analysis.context if ml_analysis else ""
+            )
+        )
+        if ml_engine:
+            ml_engine.remember_turn(user_prompt)
+
+        await websocket.send_json({
+            "type": "final_answer",
+            "content": result["answer"],
+            "sources": result.get("sources", []),
+            "session_id": memory_manager.current_session_id
+        })
+        if speak_response and voice_engine.enabled and result.get("answer"):
+            await send_voice(websocket, result["answer"])
+        return
+
+    def on_iteration_start(it: int):
+        asyncio.run_coroutine_threadsafe(
+            websocket.send_json({"type": "iteration_start", "iteration": it}),
+            loop
+        )
+
+    def on_thought_chunk(chunk: str):
+        asyncio.run_coroutine_threadsafe(
+            websocket.send_json({"type": "thought_chunk", "chunk": chunk}),
+            loop
+        )
+
+    def on_content_chunk(chunk: str):
+        asyncio.run_coroutine_threadsafe(
+            websocket.send_json({"type": "content_chunk", "chunk": chunk}),
+            loop
+        )
+
+    def on_tool_call(tool: str, args: dict):
+        asyncio.run_coroutine_threadsafe(
+            websocket.send_json({"type": "tool_call", "tool": tool, "args": args}),
+            loop
+        )
+
+    def on_tool_result(tool: str, output: any):
+        count = len(output) if isinstance(output, list) else 1
+        asyncio.run_coroutine_threadsafe(
+            websocket.send_json({"type": "tool_result", "tool": tool, "count": count}),
+            loop
+        )
+
+    def on_confirm(tool: str, args: dict, reason: str) -> bool:
+        # Se llama desde el hilo del agente, que se queda esperando la respuesta del usuario
+        fut = asyncio.run_coroutine_threadsafe(_ask_confirmation(websocket, pending, tool, args, reason), loop)
+        try:
+            return fut.result(timeout=CONFIRM_TIMEOUT_SECONDS + 10)
+        except Exception:
+            return False
+
+    callbacks = AgentCallbacks(
+        on_iteration_start=on_iteration_start,
+        on_thought_chunk=on_thought_chunk,
+        on_content_chunk=on_content_chunk,
+        on_tool_call=on_tool_call,
+        on_tool_result=on_tool_result,
+        on_confirm=on_confirm
+    )
+
+    deep = edith_agent.resolve_think(user_prompt, think_choice)
+    await websocket.send_json({"type": "reasoning", "deep": deep})
+
+    res = await loop.run_in_executor(
+        None,
+        lambda: edith_agent.run(user_prompt, callbacks=callbacks, think=deep)
+    )
+
+    await websocket.send_json({
+        "type": "final_answer",
+        "content": res.answer,
+        "thoughts": res.thoughts,
+        "sources": res.sources,
+        "deep": res.deep_thinking,
+        "session_id": memory_manager.current_session_id
+    })
+    if speak_response and voice_engine.enabled and res.answer:
+        await send_voice(websocket, res.answer)
 
 
 # ---------- Fases 9-11: canales remotos, notificaciones y Heartbeat ----------
@@ -464,6 +538,9 @@ async def broadcast_ui(event: dict):
 @app.on_event("startup")
 async def _startup_channels():
     port = int(os.getenv("EDITH_PORT", "8000"))
+    get_api_token()  # se genera aquí la primera vez, no en la primera petición
+    print("[Seguridad] Interfaz y API protegidas con token. Para entrar desde otro dispositivo: "
+          "python main.py --access-link")
     start_channels(provider, broadcast_ui, asyncio.get_running_loop(), port=port)
 
 
