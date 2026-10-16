@@ -1,11 +1,12 @@
 """Rutas de las Fases 9-11: WhatsApp, telefonía (Twilio), recordatorios y Heartbeat."""
 
 import asyncio
+import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional, Tuple
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request, WebSocket
 from fastapi.responses import FileResponse, Response
@@ -15,12 +16,13 @@ from agent.channels import notifier
 from agent.channels import telephony, whatsapp
 from agent.channels.security import check_bridge_secret, canonical_number
 from agent.config import Config
-from agent.paths import DATA_DIR, LOGS_DIR
+from agent.paths import APP_DIR, DATA_DIR, FROZEN, INSTALL_DIR, LOGS_DIR, PROJECT_DIR
 from agent.heartbeat import Heartbeat
 from agent.tools import reminder_tools
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-BRIDGE_DIR = BASE_DIR / "bridges" / "whatsapp"
+BRIDGE_DIR = APP_DIR / "bridges" / "whatsapp"  # código fuente del bridge (modo desarrollo)
+# Fase 15.3: bridge empaquetado (Node SEA), sin necesidad de instalar Node. En la app va junto a EDITH.exe
+BRIDGE_EXE = INSTALL_DIR / "edith-whatsapp.exe" if FROZEN else PROJECT_DIR / "dist" / "EDITH" / "edith-whatsapp.exe"
 QR_FILE = DATA_DIR / "channels" / "whatsapp" / "qr.png"
 BRIDGE_LOG = LOGS_DIR / "whatsapp-bridge.log"
 
@@ -82,19 +84,33 @@ def toggle_heartbeat(enabled: bool):
         hb.stop()
 
 
+def bridge_command() -> Optional[Tuple[List[str], Path]]:
+    """(comando, carpeta) del bridge de WhatsApp. App empaquetada: edith-whatsapp.exe. Desarrollo:
+    bridge.mjs con Node si está instalado (así se prueban los cambios al momento) y, si no, el .exe
+    construido por build/build_setup.ps1."""
+    if not FROZEN:
+        node = shutil.which("node")
+        if node and (BRIDGE_DIR / "node_modules").exists():
+            return [node, "bridge.mjs"], BRIDGE_DIR
+    if BRIDGE_EXE.is_file():
+        return [str(BRIDGE_EXE)], BRIDGE_EXE.parent
+    return None
+
+
 def _start_bridge(port: int):
-    """Arranca el bridge de WhatsApp como proceso hijo (sin ventana) si Node y sus módulos están."""
-    node = shutil.which("node")
-    if not node or not (BRIDGE_DIR / "node_modules").exists():
-        print("[WhatsApp] bridge no iniciado: instala Node 20+ y ejecuta 'npm install' en bridges/whatsapp")
+    """Arranca el bridge de WhatsApp como proceso hijo (sin ventana)."""
+    cmd = bridge_command()
+    if not cmd:
+        print("[WhatsApp] bridge no iniciado: " + ("falta edith-whatsapp.exe (componente WhatsApp del instalador)"
+              if FROZEN else "instala Node 20+ y ejecuta 'npm install' en bridges/whatsapp"))
         return
+    args, cwd = cmd
     BRIDGE_LOG.parent.mkdir(parents=True, exist_ok=True)
     log = open(BRIDGE_LOG, "a", encoding="utf-8")
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
-    env = {**__import__("os").environ, "EDITH_URL": f"http://127.0.0.1:{port}", "EDITH_DATA_DIR": str(DATA_DIR)}
-    _state["bridge"] = subprocess.Popen([node, "bridge.mjs"], cwd=str(BRIDGE_DIR), stdout=log, stderr=log,
-                                        creationflags=flags, env=env)
-    print(f"[WhatsApp] bridge iniciado (log: {BRIDGE_LOG})")
+    env = {**os.environ, "EDITH_URL": f"http://127.0.0.1:{port}", "EDITH_DATA_DIR": str(DATA_DIR)}
+    _state["bridge"] = subprocess.Popen(args, cwd=str(cwd), stdout=log, stderr=log, creationflags=flags, env=env)
+    print(f"[WhatsApp] bridge iniciado: {Path(args[-1]).name} (log: {BRIDGE_LOG})")
 
 
 # ---------------- WhatsApp (Fase 9) ----------------
@@ -134,6 +150,7 @@ def channels_status():
         "whatsapp": {"enabled": Config.WHATSAPP_ENABLED,
                      **(whatsapp.bridge_status() if Config.WHATSAPP_ENABLED else {}),
                      "qr_available": QR_FILE.exists(),
+                     "bridge_available": bridge_command() is not None,
                      "voice_replies": Config.WHATSAPP_VOICE_REPLIES},
         "phone": {"configured": telephony.configured(), "mode": Config.TWILIO_VOICE_MODE,
                   "public_url": bool(Config.PUBLIC_BASE_URL)},

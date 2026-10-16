@@ -16,5 +16,11 @@ data/sessions/
 # Lanzador compilado (se genera con desktop/launcher/build_launcher.bat o install_edith.bat)
 EDITH.exe
 
+# Fase 15.3: empaquetado (build/build_setup.ps1). Solo se versionan los scripts de build/
+dist/
+build/.venv/
+build/work/
+build/*.log
+
 # Configuración de plugins de Obsidian: puede contener claves (p. ej. Local REST API)
 **/.obsidian/plugins/*/data.json

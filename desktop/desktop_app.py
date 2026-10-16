@@ -7,10 +7,14 @@
   * Una sola instancia: abrirla otra vez solo muestra la ventana existente.
   * Puerto libre automático (8000 si está libre) o fijo con EDITH_PORT en .env.
   * Atajo global Win + Shift + E para mostrar/ocultar EDITH desde cualquier programa.
+  * Fase 15.3: también es el punto de entrada de EDITH.exe empaquetado con PyInstaller
+    (build/edith.spec). EDITH.exe --self-test comprueba el paquete sin abrir ventanas.
 """
 
 import ctypes
+import hashlib
 import logging
+import multiprocessing
 import os
 import socket
 import sys
@@ -23,12 +27,22 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from agent.paths import APP_DIR, EDITH_HOME, LOGS_DIR  # noqa: E402  (también migra los datos la 1.ª vez)
+from agent.paths import APP_DIR, EDITH_HOME, FROZEN, LOGS_DIR, VERSION  # noqa: E402  (también migra los datos la 1.ª vez)
+
+
+def _instance_suffix() -> str:
+    """Una instancia por carpeta de datos. Con un EDITH_HOME propio (pruebas, copia portátil) los nombres
+    llevan una huella de esa carpeta: no muestran ni cierran la EDITH normal, ni el desinstalador a ellas."""
+    if not os.environ.get("EDITH_HOME"):
+        return ""
+    return "_" + hashlib.sha1(str(EDITH_HOME).lower().encode("utf-8")).hexdigest()[:8]
+
 
 APP_ID = "EDITH.Desktop"
-MUTEX_NAME = "Local\\EDITH_Desktop_Instance"
-SHOW_EVENT_NAME = "Local\\EDITH_Desktop_Show"
-QUIT_EVENT_NAME = "Local\\EDITH_Desktop_Quit"  # el desinstalador (Fase 15.4) lo usa para cerrar EDITH
+_SUFFIX = _instance_suffix()
+MUTEX_NAME = "Local\\EDITH_Desktop_Instance" + _SUFFIX
+SHOW_EVENT_NAME = "Local\\EDITH_Desktop_Show" + _SUFFIX
+QUIT_EVENT_NAME = "Local\\EDITH_Desktop_Quit" + _SUFFIX  # el desinstalador (Fase 15.4) lo usa para cerrar EDITH
 # Icono cuadrado multi-tamaño (16-256 px) generado a partir del logo: Windows no muestra bien
 # iconos no cuadrados de un solo tamaño (edith.ico mide 101x106).
 ICON_ICO = APP_DIR / "desktop" / "assets" / "edith-app.ico"
@@ -252,7 +266,7 @@ class DesktopApp:
             pystray.MenuItem("Salir", lambda: self.quit()),
         )
         image = Image.open(ICON_PNG if ICON_PNG.exists() else ICON_ICO)
-        self.tray = pystray.Icon("EDITH", image, "EDITH", menu)
+        self.tray = pystray.Icon("EDITH", image, f"EDITH {VERSION}", menu)
         self.tray.run_detached()
         log.info("Icono de la bandeja listo")
 
@@ -360,7 +374,14 @@ class DesktopApp:
 
 
 def main():
+    multiprocessing.freeze_support()  # EDITH.exe: los procesos hijos de multiprocessing no relanzan la app
     setup_logging()
+    test_arg = next((a for a in sys.argv[1:] if a.startswith("--self-test")), None)
+    if test_arg:
+        import self_test  # noqa: PLC0415  (desktop/self_test.py)
+        report = test_arg.partition("=")[2] or str(LOGS_DIR / "self-test.txt")
+        sys.exit(self_test.run(Path(report)))
+    log.info("EDITH %s (%s)", VERSION, "app empaquetada" if FROZEN else "desde el código")
     if not acquire_single_instance():
         log.info("EDITH ya estaba abierta: se muestra la ventana existente")
         return
@@ -369,6 +390,8 @@ def main():
     except Exception:
         log.exception("Error fatal en EDITH Desktop")
         user32.MessageBoxW(None, f"EDITH no pudo iniciar. Revisa los registros en:\n{LOGS_DIR}", "EDITH", 0x10)
+        if FROZEN:
+            sys.exit(1)  # en EDITH.exe, sin un segundo cuadro de «excepción no controlada» de PyInstaller
         raise
 
 

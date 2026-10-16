@@ -1,7 +1,9 @@
-// EDITH.exe (Fase 15.1): lanzador nativo sin consola.
+// EDITH.exe (Fase 15.1): lanzador nativo sin consola PARA EL MODO DESARROLLO.
 // Abre desktop/desktop_app.py con el pythonw.exe del entorno .venv del proyecto.
-// En la Fase 15.3 lo reemplaza el ejecutable empaquetado con PyInstaller.
-// Se compila con desktop\launcher\build_launcher.bat (usa el compilador C# que trae Windows).
+// La app instalable es otra: dist\EDITH\EDITH.exe, empaquetada con PyInstaller (Fase 15.3,
+// build\build_setup.ps1), que no necesita la carpeta del proyecto ni el .venv.
+// Se compila con desktop\launcher\build_launcher.bat (usa el compilador C# que trae Windows);
+// la versión sale del archivo VERSION de la raíz (el .bat genera los atributos de versión).
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -11,7 +13,6 @@ using System.Windows.Forms;
 [assembly: AssemblyTitle("EDITH")]
 [assembly: AssemblyProduct("EDITH")]
 [assembly: AssemblyDescription("EDITH - asistente de IA local")]
-[assembly: AssemblyVersion("0.0.6.0")]
 
 static class Launcher
 {

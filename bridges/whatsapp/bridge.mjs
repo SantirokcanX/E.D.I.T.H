@@ -20,7 +20,8 @@ import pino from 'pino'
 import QRCode from 'qrcode'
 import qrcodeTerminal from 'qrcode-terminal'
 
-const HERE = path.dirname(fileURLToPath(import.meta.url))
+// Empaquetado como edith-whatsapp.exe (Fase 15.3) no hay import.meta: la carpeta es la del ejecutable
+const HERE = typeof __dirname !== 'undefined' ? __dirname : path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '..', '..')
 // EDITH le pasa su carpeta de datos (%LOCALAPPDATA%\EDITH\data); si se ejecuta suelto, se calcula igual
 const EDITH_DATA = process.env.EDITH_DATA_DIR ||
@@ -32,6 +33,12 @@ const SECRET_FILE = path.join(EDITH_DATA, 'channels', 'bridge_secret')
 const EDITH_URL = (process.env.EDITH_URL || 'http://127.0.0.1:8000').replace(/\/$/, '')
 const PORT = Number(process.env.BRIDGE_PORT || 3100)
 const MAX_AUDIO_BYTES = 10 * 1024 * 1024
+
+// build/build_setup.ps1: comprueba que el ejecutable carga Baileys y sus módulos, sin conectarse
+if (process.argv.includes('--check')) {
+  console.log(`edith-whatsapp OK · Node ${process.versions.node} · Baileys ${typeof makeWASocket === 'function' ? 'cargado' : 'NO cargado'}`)
+  process.exit(typeof makeWASocket === 'function' ? 0 : 1)
+}
 
 fs.mkdirSync(DATA_DIR, { recursive: true })
 const logger = pino({ level: process.env.BRIDGE_LOG_LEVEL || 'warn' })
@@ -248,6 +255,8 @@ server.on('error', (e) => {
   process.exit(1)
 })
 server.listen(PORT, '127.0.0.1', () => log(`API local en http://127.0.0.1:${PORT} · EDITH en ${EDITH_URL}`))
-await refreshAllowlist()
-if (!allow.enabled) log('Aviso: EDITH no respondió o WHATSAPP_ENABLED=false / sin números autorizados. Se reintentará.')
-start().catch((e) => { log('No se pudo iniciar:', e?.message); process.exit(1) })
+// Sin await de nivel superior: el ejecutable empaquetado (Node SEA) corre como CommonJS
+refreshAllowlist().then(() => {
+  if (!allow.enabled) log('Aviso: EDITH no respondió o WHATSAPP_ENABLED=false / sin números autorizados. Se reintentará.')
+  return start()
+}).catch((e) => { log('No se pudo iniciar:', e?.message); process.exit(1) })

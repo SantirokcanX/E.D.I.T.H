@@ -423,7 +423,7 @@ const EdithSetup = (() => {
               if (r.ok) { qr.src = URL.createObjectURL(await r.blob()); qr.hidden = false; qrBtn.textContent = "Escanéalo en WhatsApp → Dispositivos vinculados"; return; }
               await new Promise((res) => setTimeout(res, 1500));
             }
-            qrBtn.textContent = "No apareció el QR: revisa que Node esté instalado (Laptop → Canales).";
+            qrBtn.textContent = "No apareció el QR: falta el componente de WhatsApp (edith-whatsapp.exe o Node). Mira Laptop → Canales.";
           } });
         body.append(qrBtn, qr);
       }

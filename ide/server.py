@@ -9,11 +9,11 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
 from agent.config import Config
-from agent.paths import DATA_DIR
+from agent.paths import APP_DIR, DATA_DIR, FROZEN, VERSION
 from agent.providers import get_provider
 from agent.core.reasoning_agent import ReasoningAgent, AgentCallbacks
 from agent.coworking.team import CoworkingTeam, TeamMemberEvent
@@ -35,7 +35,7 @@ except Exception:  # pragma: no cover
     get_ml_engine = None
     ML_ROUTES = []
 
-app = FastAPI(title="EDITH Studio IDE & Companion Hub")
+app = FastAPI(title="EDITH Studio IDE & Companion Hub", version=VERSION)
 
 
 @app.middleware("http")
@@ -56,7 +56,7 @@ async def revalidate_static(request, call_next):
 app.add_middleware(AccessGuard)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-STATIC_DIR = Path(__file__).resolve().parent / "static"
+STATIC_DIR = APP_DIR / "ide" / "static"  # en la app empaquetada (Fase 15.3): _internal\ide\static
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
 AUDIO_DIR = DATA_DIR / "audio"
 AUDIO_DIR.mkdir(parents=True, exist_ok=True)
@@ -162,6 +162,11 @@ def api_ml_train():
     if not ml_engine:
         raise HTTPException(status_code=503, detail="ML desactivado")
     return {"indexed": ml_engine.train_from_sessions(), **ml_engine.status()}
+
+
+@app.get("/api/version")
+def api_version():
+    return {"version": VERSION, "packaged": FROZEN}
 
 
 @app.get("/api/status")
@@ -549,6 +554,15 @@ async def _startup_channels():
 @app.on_event("shutdown")
 async def _shutdown_channels():
     stop_channels()
+
+
+@app.get("/", include_in_schema=False)
+@app.get("/index.html", include_in_schema=False)
+def index_page():
+    """index.html con la versión del archivo VERSION en los enlaces a CSS y JS: tras actualizar
+    EDITH, WebView2 no reutiliza un app.js viejo (Fase 15.3)."""
+    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    return HTMLResponse(html.replace("{{EDITH_VERSION}}", VERSION))
 
 
 app.include_router(channels_router)

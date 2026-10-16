@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-from .paths import env_file
+from .paths import FROZEN, env_file
 
 # .env del proyecto (desarrollo) o, en la app instalada, el de %LOCALAPPDATA%\EDITH
 env_path = env_file()
@@ -21,7 +21,11 @@ def _digits(number: str) -> str:
 
 
 def _default_vault() -> str:
-    return str(Path.home() / "Documents" / "EDITH_proyecto" / "EDITH_p")
+    dev_vault = Path.home() / "Documents" / "EDITH_proyecto" / "EDITH_p"
+    # En la app empaquetada de otra PC no existe la bóveda del proyecto: Documentos\EDITH
+    if FROZEN and not dev_vault.is_dir():
+        return str(Path.home() / "Documents" / "EDITH")
+    return str(dev_vault)
 
 class Config:
     @classmethod

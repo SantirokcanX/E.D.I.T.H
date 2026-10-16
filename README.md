@@ -102,6 +102,13 @@ Si prefieres la terminal:
   .venv\Scripts\python main.py --coworking
   ```
 
+### 4. Construir la app de escritorio empaquetada (Fase 15.3)
+Genera `dist\EDITH\EDITH.exe` (+ `_internal\`), que funciona sin la carpeta del proyecto ni el `.venv`, y el bridge de WhatsApp `edith-whatsapp.exe` (no necesita Node para usarse). La versión sale del archivo `VERSION`.
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File build\build_setup.ps1
+```
+*(Crea el entorno limpio `build\.venv`, ejecuta PyInstaller con `build\edith.spec`, empaqueta el bridge con esbuild + Node SEA y termina con `EDITH.exe --self-test`. Para construir el bridge hace falta Node 20+; si no, usa `-NoWhatsApp`).*
+
 ---
 
 ## 💬 Comandos Disponibles en la Consola
