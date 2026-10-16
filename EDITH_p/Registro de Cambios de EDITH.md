@@ -13,6 +13,88 @@ Bitácora técnica de cada versión. Plan general: [[Plan de Cambios y Evolució
 
 ---
 
+## v0.0.9 — 16/10/2026 · EDITH empaquetada, sin el proyecto ni el .venv (Fase 15.3)
+Commit `b2ee9eb`, en la rama `claude/nice-brattain-87c302` encima de la v0.0.8 (`8ce8d38`). Tercera entrega de la Fase 15: **EDITH ya es un programa de verdad**. `dist\EDITH\EDITH.exe` arranca sin la carpeta del proyecto, sin el `.venv` y sin tener Python instalado, y WhatsApp funciona sin instalar Node. Diseño: [[Diseño de EDITH Setup (Aplicación de Escritorio)]].
+
+### 📦 Qué se construye
+Un solo comando, `powershell -NoProfile -ExecutionPolicy Bypass -File build\build_setup.ps1` (unos 4 min la primera vez y 2 min después):
+
+| Paso | Qué hace | Resultado |
+|---|---|---|
+| 1 · Entorno limpio | `build\.venv` con Python 3.13 + `requirements.txt` + PyInstaller 6.22.3 (se reutiliza en las siguientes construcciones) | Demuestra que `requirements.txt` está completo |
+| 2 · PyInstaller | `build\edith.spec`, modo carpeta, sin consola, sin UPX (da menos falsos positivos de antivirus) | `dist\EDITH\EDITH.exe` + `_internal\` · **401 MB** |
+| 3 · Bridge de WhatsApp | esbuild junta el bridge en un solo `bridge.cjs` → Node SEA lo inyecta en una copia de `node.exe` (postject) | `dist\EDITH\edith-whatsapp.exe` · **97 MB** (Node 24.22) |
+| 4 · Autocomprobación | `EDITH.exe --self-test` y `edith-whatsapp.exe --check` con datos temporales | 11/11 y «Baileys cargado» |
+
+Total: **498 MB** con WhatsApp. Sin el bridge entra en lo estimado (250–450 MB). Los modelos siguen sin ir dentro: se descargan en el asistente.
+
+### 🔢 Versión única
+- Archivo **`VERSION`** en la raíz (`0.0.9`). Lo leen la app (`/api/version`, el registro, el icono de la bandeja «EDITH 0.0.9»), la interfaz, la spec (el recurso de versión de `EDITH.exe`: *Propiedades → Detalles*) y el lanzador C# de desarrollo (`build_launcher.bat` genera `AssemblyVersion 0.0.9.0`).
+- La interfaz se sirve con `?v=0.0.9` en el CSS y el JavaScript: tras actualizar, WebView2 no se queda con un `app.js` viejo. Antes eran 4 números que había que cambiar a mano en `index.html`.
+- El instalador (15.4) y el actualizador (15.5) leerán el mismo archivo.
+
+### 🧊 EDITH.exe frente al código fuente
+| Pieza | Desde el código | En `EDITH.exe` |
+|---|---|---|
+| Interfaz, iconos y `VERSION` | Carpeta del proyecto | `_internal\` (dentro del paquete) |
+| `.env` | El del proyecto si existe | Siempre `%LOCALAPPDATA%\EDITH\.env` (lo escribe ⚙️ Ajustes) |
+| Datos | `%LOCALAPPDATA%\EDITH` (copia única de `data/` y `workspace/` del proyecto) | `%LOCALAPPDATA%\EDITH`; no hay proyecto del que copiar |
+| Bridge de WhatsApp | `node bridge.mjs` si hay Node; si no, el `.exe` de `dist\EDITH` | `edith-whatsapp.exe` junto a `EDITH.exe`; nunca pide Node |
+| Iniciar con Windows | El lanzador `EDITH.exe` del proyecto | El propio `EDITH.exe --tray` |
+| Bóveda por defecto | `Documentos\EDITH_proyecto\EDITH_p` | La misma si existe; en otra PC, `Documentos\EDITH` |
+
+- **Tus ajustes de esta laptop no se pierden**: la primera vez que se abra la app empaquetada sin `.env` propio, copia una sola vez el `.env` del proyecto que indica la marca `%LOCALAPPDATA%\EDITH\.migrado_desde_proyecto`. Después cada una tiene el suyo: la app empaquetada usa el de `%LOCALAPPDATA%\EDITH` y el código, el del proyecto.
+- **Una instancia por carpeta de datos**: con un `EDITH_HOME` propio (pruebas, copia portátil) el mutex y los eventos llevan una huella de la carpeta (`Local\EDITH_Desktop_Quit_xxxxxxxx`). Así una copia de prueba no muestra ni cierra tu EDITH. La EDITH normal conserva los nombres de siempre (el desinstalador de la 15.4 usará `Local\EDITH_Desktop_Quit`).
+- Si algo falla al arrancar sale un solo aviso (PyInstaller añadía un segundo cuadro de «excepción no controlada»). Además, `multiprocessing.freeze_support()` evita que un proceso hijo vuelva a abrir la app.
+- Voz de Windows (SAPI5): no hay nada que empaquetar porque usa `System.Speech` a través de PowerShell. La autocomprobación genera un WAV de prueba.
+
+### 🔍 Dependencias pesadas, comprobadas dentro del .exe
+| Dependencia | Cómo se comprobó |
+|---|---|
+| numpy 2.5.4 · scipy 1.18.1 · scikit-learn 1.9.1 | Entrena un `SGDClassifier` con `HashingVectorizer`, lo mismo que usa el enrutador ML |
+| faster-whisper 1.2.1 · ctranslate2 4.8.3 · onnxruntime 1.31 | Carga el filtro de silencio `silero_vad_v6.onnx`, un recurso que PyInstaller no copiaba solo; CPU con int8/float32 |
+| PyAV 19.0.1 | WAV → OGG/Opus → 16 kHz, como una nota de voz de WhatsApp |
+| pygame 2.6.1 · edge-tts 7.3.1 | Mezclador de audio iniciado |
+| pywebview 6.2.1 · pythonnet 3.2.1 · WebView2 · pystray 0.19.5 | Plataforma WinForms cargada y bandeja `_win32` |
+| FastAPI | `/api/version` y la página principal, con token |
+
+`requirements.txt` no tenía **pystray ni Pillow**: el `.venv` de esta laptop los tenía instalados aparte, pero en un entorno limpio la bandeja no habría funcionado. Ya están.
+
+### 💬 WhatsApp sin Node
+- `edith-whatsapp.exe` = Node 24 + el bridge entero (Baileys v7 con su WebAssembly, protobuf, pino y qrcode) en un archivo. Se quedan fuera las librerías de imagen opcionales de Baileys (sharp, jimp): solo se pierden las miniaturas.
+- `bridge.mjs` ya no usa `await` de nivel superior (Node SEA ejecuta CommonJS) y tiene `--check` para comprobar el ejecutable sin conectarse.
+- `ide/channels_api.py`: en la app usa `edith-whatsapp.exe` junto a `EDITH.exe`. Desde el código usa `node bridge.mjs` si Node está instalado (los cambios se prueban al momento) y, si no, el `.exe` de `dist\EDITH`. *Canales* informa `bridge_available` y el aviso del QR ya no dice «instala Node».
+- Probado sin Node: arranca, **genera el QR real de vinculación de WhatsApp** y su API local solo responde con la clave (401 sin ella).
+
+### 🔧 Piezas técnicas
+| Archivo | Qué hace |
+|---|---|
+| `VERSION` | Versión única de EDITH |
+| `build/edith.spec` | PyInstaller: punto de entrada `desktop/desktop_app.py`, recursos, DLL de ctranslate2, recurso de versión e icono |
+| `build/build_setup.ps1` | Construcción completa (entorno, PyInstaller, bridge, autocomprobación); `-Clean`, `-NoWhatsApp`, `-SkipSelfTest` |
+| `build/requirements-build.txt` | PyInstaller fijado en 6.22.3 |
+| `desktop/self_test.py` | `EDITH.exe --self-test`: 11 comprobaciones sin ventanas |
+| `agent/paths.py` | `FROZEN`, `INSTALL_DIR`, `VERSION`, `.env` según el modo y adopción única del `.env` del proyecto |
+| `ide/server.py` | Interfaz desde el paquete, `/api/version` y la página con la versión |
+| `ide/channels_api.py` | `bridge_command()`: `.exe` empaquetado o Node |
+| `desktop/desktop_app.py` | `--self-test`, una instancia por carpeta de datos y versión en el registro y la bandeja |
+| `desktop/launcher/` | Lanzador de desarrollo; toma la versión de `VERSION` |
+
+### 🧪 Pruebas
+- **`python tests/test_fase_15_3.py`: 23/23**. Cubren la versión en la API, la interfaz, el lanzador y la spec; el `.env` en modo empaquetado; la adopción del `.env` (una sola vez y sin pisar uno existente); la elección del bridge con y sin Node y en la app; `bridge.mjs` sin `await`; los nombres de instancia, y la autocomprobación desde el código (11/11).
+- Siguen pasando: `tests/test_fase_15_2.py` **65/65**, `tests/test_seguridad.py` **78/78** y `tests/test_fases_9_11.py` **55/55**.
+- `build\build_setup.ps1` completo: autocomprobación **11/11** y `edith-whatsapp OK · Node 24.22.0 · Baileys cargado`.
+- **App empaquetada real: 12/12**. Se copió a una carpeta temporal fuera del proyecto, sin `.venv` en el PATH, con `EDITH_HOME` temporal y `--tray`, sin tocar la pantalla. Arranca en el puerto 8000 y `/api/version` → `packaged: true`. El asistente queda pendiente y la ventana oculta (WebView2) carga la interfaz sin el token en la URL y **muestra el asistente «Hola, soy EDITH 👓»** (comprobado dentro de WebView2 con su puerto de depuración). La interfaz enlaza `app.js?v=0.0.9`. Ajustes, guardado desde la propia interfaz, escribe en `EDITH_HOME\.env` (`EDITH_VOICE=dalia`, `QUIET_HOURS`) y aplica la voz al momento. Detecta `edith-whatsapp.exe` y se cierra en orden con `Local\EDITH_Desktop_Quit_<huella>`.
+- Tus datos reales no se tocaron: 0 archivos modificados en `%LOCALAPPDATA%\EDITH`, y el registro de notificaciones (AppUserModelId) se restauró tras cada prueba. La prueba arrancó Ollama, que no estaba abierto; al terminar se cerró.
+
+### 📌 Pendiente
+- **15.4 · Instalador** (Inno Setup) sobre `dist\EDITH`, con `edith-whatsapp.exe` como componente opcional.
+- La app empaquetada no tiene `python main.py --access-link`, pero la página de acceso y el aviso del servidor todavía lo mencionan. Falta sacar el enlace para otros dispositivos desde la app (en Ajustes o con `EDITH.exe --access-link`).
+- `edith-whatsapp.exe` lleva el icono y los datos de `node.exe`, y su firma queda rota al inyectar el bridge (postject lo avisa). Firmar los dos ejecutables entra en la decisión de firma de la 15.5.
+- `dist\` y `build\.venv` no van a git. Para probar en otra PC basta copiar la carpeta `dist\EDITH` (o esperar al instalador).
+
+---
+
 ## v0.0.8 — 16/10/2026 · Asistente de primer arranque y Ajustes (Fase 15.2)
 Commits `8cea1f8` (asistente y Ajustes) y `3466373` (pruebas), en `main` encima de la v0.0.7. Segunda entrega de la Fase 15: EDITH se configura sola la primera vez y todo se cambia desde la app, sin editar `.env`. Diseño: [[Diseño de EDITH Setup (Aplicación de Escritorio)]].
 
@@ -89,7 +171,7 @@ Con menos de 8 GB de RAM baja a los modelos pequeños. Antes de descargar compru
 
 ### 📌 Pendiente
 - Regenerar la API key y los certificados del plugin Local REST API (ver arriba).
-- 15.3 · Empaquetado con PyInstaller: es lo que permitirá usar `%LOCALAPPDATA%\EDITH\.env` sin la carpeta del proyecto.
+- ~~15.3 · Empaquetado con PyInstaller: es lo que permitirá usar `%LOCALAPPDATA%\EDITH\.env` sin la carpeta del proyecto.~~ Hecho en la v0.0.9.
 - El registro de modelos de Ollama fue muy lento en la prueba (~150 KB/s): la descarga se puede pausar y seguir otro día.
 
 ---

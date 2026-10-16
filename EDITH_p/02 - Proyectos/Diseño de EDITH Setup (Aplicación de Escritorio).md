@@ -7,7 +7,7 @@ tags:
   - instalador
   - aplicacion-escritorio
 created: 2026-10-16
-status: en-marcha (15.1 y 15.2 listas)
+status: en-marcha (15.1 a 15.3 listas)
 fase: 15
 ---
 
@@ -25,6 +25,9 @@ fase: 15
 
 > [!success] Entrega 15.2 completada (v0.0.8, 16/10/2026)
 > Asistente de primer arranque y panel ⚙️ Ajustes. Detalle en [[Registro de Cambios de EDITH#v0.0.8 — 16/10/2026 · Asistente de primer arranque y Ajustes (Fase 15.2)]].
+
+> [!success] Entrega 15.3 completada (v0.0.9, 16/10/2026)
+> Empaquetado: `build\build_setup.ps1` → `dist\EDITH\EDITH.exe` (PyInstaller, modo carpeta), que funciona sin la carpeta del proyecto ni el `.venv`, y `edith-whatsapp.exe` (esbuild + Node SEA). Detalle en [[Registro de Cambios de EDITH#v0.0.9 — 16/10/2026 · EDITH empaquetada, sin el proyecto ni el .venv (Fase 15.3)]].
 
 ## 🔎 Punto de partida (antes de la 15.1, v0.0.5)
 
@@ -147,6 +150,12 @@ Todo lo elegido queda editable en un panel **Ajustes** dentro de la app.
 3. Empaquetar el bridge de WhatsApp (`esbuild` + Node SEA) → `edith-whatsapp.exe`.
 4. Compilar `installer/edith.iss` con Inno Setup → `dist/EDITH-Setup-x.y.z.exe`.
 5. Versión única en un archivo `VERSION` que leen la app, el instalador y el actualizador.
+
+> [!note] Cómo quedó en la v0.0.9
+> - Pasos 1, 2, 3 y 5 hechos; el 4 (Inno Setup) es la 15.4. El script termina con una **autocomprobación** (`EDITH.exe --self-test`, 11 comprobaciones sin abrir ventanas) y con `edith-whatsapp.exe --check`.
+> - Tamaños medidos: `dist\EDITH` **401 MB** y `edith-whatsapp.exe` **97 MB**, sin comprimir.
+> - La app empaquetada usa siempre `%LOCALAPPDATA%\EDITH\.env`. En esta laptop, la primera vez copia el `.env` del proyecto para no perder los ajustes.
+> - `requirements.txt` no tenía `pystray` ni `Pillow`: el entorno limpio lo destapó.
 
 **Pruebas**: instalar en una cuenta de Windows nueva o en una máquina virtual (Windows Sandbox no está disponible en Windows 11 *Home*). Verificar: instalación sin admin, asistente completo, Heartbeat con la ventana cerrada, actualización conservando datos y desinstalación.
 

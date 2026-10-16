@@ -11,14 +11,14 @@ tags:
   - obsidian-sync
 created: 2026-10-15
 updated: 2026-10-16
-version: 0.0.8
+version: 0.0.9
 status: en-desarrollo
 ---
 
 # 👓 Plan Maestro y Hoja de Ruta: E.D.I.T.H.
 
 > [!info] Estado del Sistema
-> **E.D.I.T.H.** (Enhanced Dialectical Intelligence & Tactical Heuristics) está en la versión **0.0.8**: ya habla por **WhatsApp (texto y notas de voz)**, contesta y hace **llamadas telefónicas** (Twilio) y tiene **iniciativa propia** (recordatorios, alarmas que escalan a llamada, salud de la laptop, tareas de Obsidian y resumen matutino). Todo sobre su motor dual Qwen3 (100 % GPU, ~1 s), LaTeX, visión de pantalla y Obsidian. Desde la **v0.0.6** es una app de escritorio y la **v0.0.7** protege la interfaz y la API con token y pide tu permiso antes de ejecutar comandos. La **v0.0.8** se configura sola la primera vez (asistente que mira tu GPU y descarga los modelos) y todo se cambia en ⚙️ Ajustes, sin editar `.env`.
+> **E.D.I.T.H.** (Enhanced Dialectical Intelligence & Tactical Heuristics) está en la versión **0.0.9**: ya habla por **WhatsApp (texto y notas de voz)**, contesta y hace **llamadas telefónicas** (Twilio) y tiene **iniciativa propia** (recordatorios, alarmas que escalan a llamada, salud de la laptop, tareas de Obsidian y resumen matutino). Todo sobre su motor dual Qwen3 (100 % GPU, ~1 s), LaTeX, visión de pantalla y Obsidian. Desde la **v0.0.6** es una app de escritorio y la **v0.0.7** protege la interfaz y la API con token y pide tu permiso antes de ejecutar comandos. La **v0.0.8** se configura sola la primera vez (asistente que mira tu GPU y descarga los modelos) y todo se cambia en ⚙️ Ajustes, sin editar `.env`. Desde la **v0.0.9** se empaqueta como `EDITH.exe`, que funciona sin la carpeta del proyecto ni Python, con WhatsApp incluido sin necesidad de Node.
 >
 > Pendiente inmediato: **Fase 8** (servidor 24/7 + URL pública), que es lo que permite que Twilio llegue a EDITH y que WhatsApp funcione con la laptop cerrada. Su requisito de seguridad (Fase 14) ya está listo en v0.0.7.
 >
@@ -129,7 +129,7 @@ timeline
     Fase 12 : Navegación Web Interactiva Playwright (Planificado)
     Fase 13 : Ojos al Mundo Real Webcam Vision e IoT (Planificado)
     Fase 14 : Endurecimiento de Seguridad (Núcleo completado, v0.0.7)
-    Fase 15 : EDITH Setup - App de Escritorio Instalable (En marcha, 15.1 y 15.2 listas)
+    Fase 15 : EDITH Setup - App de Escritorio Instalable (En marcha, 15.1 a 15.3 listas)
 ```
 
 ### ✅ Fase 2: Integración Profunda con Obsidian
@@ -285,7 +285,7 @@ timeline
 > Diseño completo: [[Diseño de EDITH Setup (Aplicación de Escritorio)]].
 
 > [!success] 15.1 lista (v0.0.6)
-> EDITH ya se abre como app: `EDITH.exe` sin consola, icono junto al reloj, cerrar = ocultar, una sola instancia y datos en `%LOCALAPPDATA%\EDITH`. Los accesos directos del Escritorio y del menú Inicio apuntan a `EDITH.exe`. Aún depende del `.venv` de la carpeta del proyecto: eso lo resuelve el empaquetado (15.3).
+> EDITH ya se abre como app: `EDITH.exe` sin consola, icono junto al reloj, cerrar = ocultar, una sola instancia y datos en `%LOCALAPPDATA%\EDITH`. Los accesos directos del Escritorio y del menú Inicio apuntan a `EDITH.exe`. El empaquetado (15.3, v0.0.9) quitó la dependencia del `.venv` de la carpeta del proyecto.
 
 **✅ 15.1 · App nativa (sin instalador todavía) — v0.0.6**
 - [x] `EDITH.exe` sin consola: ventana WebView2 + núcleo en segundo plano (lanzador nativo de 96 KB).
@@ -296,7 +296,7 @@ timeline
 - [x] Notificaciones con nombre y logo de EDITH.
 - [x] Atajo global `Win + Shift + E`.
 - [x] Pantalla "Iniciando…" mientras arranca, y WebView2 recuerda el permiso del micrófono.
-- [x] Ajustes desde la app (15.2, v0.0.8): se guardan en el `.env` activo; en la app instalada será `%LOCALAPPDATA%\EDITH\.env`.
+- [x] Ajustes desde la app (15.2, v0.0.8): se guardan en el `.env` activo; en la app empaquetada (v0.0.9) es `%LOCALAPPDATA%\EDITH\.env`.
 
 > [!success] 15.2 lista (v0.0.8)
 > La primera vez, un asistente de 7 pasos deja EDITH configurada: mira tu GPU y recomienda los modelos, los descarga con progreso, elige la bóveda, la voz, WhatsApp y la iniciativa propia. Después todo se cambia en **⚙️ Ajustes** y se aplica al momento. Detalle: [[Registro de Cambios de EDITH#v0.0.8 — 16/10/2026 · Asistente de primer arranque y Ajustes (Fase 15.2)]].
@@ -309,10 +309,15 @@ timeline
 - [x] «Iniciar EDITH con Windows» (arranca oculta en la bandeja) y validación con mensajes claros.
 - [x] Pruebas en `tests/test_fase_15_2.py` (65 casos), junto a las de la Fase 14.
 
-**15.3 · Empaquetado**
-- [ ] PyInstaller en modo carpeta → `EDITH.exe` (+ `_internal/`).
-- [ ] Bridge de WhatsApp como `edith-whatsapp.exe` opcional (esbuild + Node SEA), sin exigir Node.
-- [ ] Archivo `VERSION` único y script `build/build_setup.ps1` que lo construye todo.
+> [!success] 15.3 lista (v0.0.9)
+> `build\build_setup.ps1` construye `dist\EDITH\EDITH.exe`, que arranca sin la carpeta del proyecto ni Python, y `edith-whatsapp.exe` para usar WhatsApp sin instalar Node. Detalle: [[Registro de Cambios de EDITH#v0.0.9 — 16/10/2026 · EDITH empaquetada, sin el proyecto ni el .venv (Fase 15.3)]].
+
+**✅ 15.3 · Empaquetado — v0.0.9**
+- [x] PyInstaller en modo carpeta → `EDITH.exe` (+ `_internal/`), sin consola y con icono (401 MB).
+- [x] Bridge de WhatsApp como `edith-whatsapp.exe` opcional (esbuild + Node SEA, 97 MB), sin exigir Node.
+- [x] Archivo `VERSION` único y script `build/build_setup.ps1` que lo construye todo y lo autocomprueba.
+- [x] Modo empaquetado: `.env` y datos en `%LOCALAPPDATA%\EDITH`, interfaz e iconos dentro del paquete; numpy, scikit-learn, faster-whisper, PyAV, pygame y edge-tts comprobados dentro del `.exe`.
+- [x] Pruebas en `tests/test_fase_15_3.py` (23 casos) y con la app empaquetada real en `--tray` (12/12).
 
 **15.4 · Instalador `EDITH-Setup.exe` (Inno Setup)**
 - [ ] Instalación por usuario, sin permisos de administrador.
@@ -325,10 +330,11 @@ timeline
 - [ ] Aviso de versión nueva y actualización conservando datos.
 - [ ] Decidir firma de código (SmartScreen avisará si no se firma).
 - [ ] Modo *cliente de mi servidor* (requiere Fases 8 y 14).
+- [ ] Enlace de acceso para otros dispositivos desde la app (hoy solo `python main.py --access-link`, que no existe en la app empaquetada).
 - [ ] Prueba completa en una cuenta de Windows nueva o máquina virtual.
 
 > [!warning] Dependencias
-> Antes de construir el instalador: sacar `data/sessions/` de git (Fase 14, hecho en v0.0.7). Para el modo cliente: Fases 8 y 14. Tamaño estimado del instalador: 250–450 MB; los modelos (~5 GB) se descargan aparte.
+> Antes de construir el instalador: sacar `data/sessions/` de git (Fase 14, hecho en v0.0.7). Para el modo cliente: Fases 8 y 14. Tamaño medido en la v0.0.9, sin comprimir: 401 MB (`dist\EDITH`) + 97 MB del bridge opcional; los modelos (~5 GB) se descargan aparte.
 
 ---
 
@@ -350,4 +356,4 @@ timeline
 - `01 - Diario/`: conversaciones archivadas desde EDITH.
 
 ---
-*Actualizado el 16/10/2026 - versión 0.0.8.*
+*Actualizado el 16/10/2026 - versión 0.0.9.*

@@ -7,7 +7,7 @@ tags:
   - home
 created: 2026-10-15
 updated: 2026-10-16
-version: 0.0.8
+version: 0.0.9
 ---
 
 # 🎛️ Centro de Mando: E.D.I.T.H.
@@ -34,7 +34,7 @@ Bienvenido a tu centro de control en **Obsidian**. Desde aquí puedes monitorear
 
 ---
 
-## ⚡ Estado Actual del Sistema (v0.0.8)
+## ⚡ Estado Actual del Sistema (v0.0.9)
 
 ```mermaid
 pie title Distribución de Capacidades
@@ -49,7 +49,7 @@ pie title Distribución de Capacidades
 - **Sentidos**: Screen Vision (captura completa y ventana) + LaTeX KaTeX + Highlight.js.
 - **Almacenamiento**: Bóveda Obsidian `EDITH_p` con auto-sync en tiempo real.
 - **Canales (v0.0.5)**: WhatsApp con notas de voz, llamadas Twilio (falta URL pública) y Heartbeat con recordatorios, alarmas y resumen matutino.
-- **App de escritorio (v0.0.6 y v0.0.8)**: `EDITH.exe` con icono junto al reloj, asistente de primer arranque y panel ⚙️ Ajustes.
+- **App de escritorio (v0.0.6, v0.0.8 y v0.0.9)**: `EDITH.exe` con icono junto al reloj, asistente de primer arranque y panel ⚙️ Ajustes. Desde la v0.0.9 se empaqueta y funciona sin la carpeta del proyecto ni Python.
 - **Seguridad (v0.0.7)**: token de acceso, permiso antes de ejecutar comandos y respuestas saneadas.
 
 ---
