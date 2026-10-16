@@ -7,6 +7,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
+from ..paths import DATA_DIR
+
 
 class MemoryManager:
     """Administra sesiones de conversación guardadas y memoria de perfil a largo plazo."""
@@ -17,8 +19,7 @@ class MemoryManager:
         # propio prefijo: todas aparecen en el historial, pero cada canal retoma solo las suyas.
         self.session_prefix = session_prefix
         self.default_title = default_title
-        base_dir = Path(__file__).resolve().parent.parent.parent
-        self.data_dir = Path(data_dir) if data_dir else base_dir / "data"
+        self.data_dir = Path(data_dir) if data_dir else DATA_DIR
         self.sessions_dir = self.data_dir / "sessions"
         self.memory_dir = self.data_dir / "memory"
         

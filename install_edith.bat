@@ -3,37 +3,45 @@ chcp 65001 > nul
 title Instalador de EDITH para Windows
 
 echo ========================================================
-echo   👓 INSTALADOR DE E.D.I.T.H. (Acceso Directo y Sistema)
+echo   E.D.I.T.H. - Accesos directos de la app de escritorio
 echo ========================================================
 echo.
-echo Configurando accesos directos en tu laptop...
 
+REM 1) EDITH.exe: lanzador nativo sin consola (se compila con el C# que trae Windows)
+if not exist "%~dp0EDITH.exe" (
+    echo Creando EDITH.exe...
+    call "%~dp0desktop\launcher\build_launcher.bat"
+    if errorlevel 1 (
+        echo No se pudo crear EDITH.exe.
+        pause
+        exit /b 1
+    )
+)
+
+REM 2) Accesos directos en el Escritorio y en el menu Inicio
+echo Creando accesos directos...
 powershell -NoProfile -Command ^
     "$ws = New-Object -ComObject WScript.Shell; " ^
-    "$deskPath = [Environment]::GetFolderPath('Desktop'); " ^
-    "$startPath = [Environment]::GetFolderPath('StartMenu') + '\Programs'; " ^
-    "$target = Join-Path (Get-Location) 'run_desktop.bat'; " ^
-    "$workDir = (Get-Location).Path; " ^
-    "$icoPath = Join-Path $workDir 'edith.ico'; " ^
-    "$s1 = $ws.CreateShortcut($deskPath + '\EDITH.lnk'); " ^
-    "$s1.TargetPath = $target; " ^
-    "$s1.WorkingDirectory = $workDir; " ^
-    "$s1.IconLocation = $icoPath; " ^
-    "$s1.Description = 'EDITH - AI Companion, Laptop Control & Visual Intelligence'; " ^
-    "$s1.Save(); " ^
-    "$s2 = $ws.CreateShortcut($startPath + '\EDITH.lnk'); " ^
-    "$s2.TargetPath = $target; " ^
-    "$s2.WorkingDirectory = $workDir; " ^
-    "$s2.IconLocation = $icoPath; " ^
-    "$s2.Description = 'EDITH - AI Companion, Laptop Control & Visual Intelligence'; " ^
-    "$s2.Save(); " ^
-    "Write-Host 'Accesos directos creados con icono personalizado en el Escritorio y Menu Inicio.' -ForegroundColor Green"
+    "$root = '%~dp0'.TrimEnd('\'); " ^
+    "$targets = @([Environment]::GetFolderPath('Desktop'), ([Environment]::GetFolderPath('StartMenu') + '\Programs')); " ^
+    "foreach ($dir in $targets) { " ^
+    "  $s = $ws.CreateShortcut($dir + '\EDITH.lnk'); " ^
+    "  $s.TargetPath = Join-Path $root 'EDITH.exe'; " ^
+    "  $s.WorkingDirectory = $root; " ^
+    "  $s.IconLocation = (Join-Path $root 'desktop\assets\edith-app.ico') + ',0'; " ^
+    "  $s.Description = 'EDITH - asistente de IA local'; " ^
+    "  $s.Save() " ^
+    "}; " ^
+    "Write-Host 'Accesos directos listos en el Escritorio y el menu Inicio.' -ForegroundColor Green"
 
 echo.
 echo ========================================================
-echo   INSTALACION COMPLETADA
+echo   LISTO
 echo ========================================================
-echo Ya puedes abrir EDITH directamente desde tu Escritorio o
-echo buscandola en el Menu Inicio de Windows como 'EDITH'.
+echo Abre EDITH desde el Escritorio o el menu Inicio.
+echo - Cerrar la ventana la deja activa junto al reloj (icono de EDITH).
+echo - Para cerrarla del todo: clic derecho en el icono ^> Salir.
+echo - Atajo para mostrarla/ocultarla: Win + Shift + E
+echo - Tus datos viven en %%LOCALAPPDATA%%\EDITH
 echo.
 pause

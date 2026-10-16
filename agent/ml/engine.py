@@ -11,9 +11,10 @@ from typing import Dict, Iterator, List, Optional, Tuple
 from .router import ROUTES, OnlineRouter
 from .semantic_memory import SemanticMemory, similarity
 
-BASE_DIR = Path(__file__).resolve().parents[2]
-DEFAULT_DIR = BASE_DIR / "data" / "ml"
-SESSIONS_DIR = BASE_DIR / "data" / "sessions"
+from ..paths import DATA_DIR
+
+DEFAULT_DIR = DATA_DIR / "ml"
+SESSIONS_DIR = DATA_DIR / "sessions"
 
 ROUTE_HINTS = {
     "web_search": "esta consulta probablemente necesita datos actuales: usa `web_search` / `read_web_page`.",

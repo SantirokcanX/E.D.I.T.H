@@ -13,8 +13,9 @@ from typing import Dict, Optional, Tuple
 
 from ..config import Config
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
-CHANNELS_DIR = BASE_DIR / "data" / "channels"
+from ..paths import DATA_DIR
+
+CHANNELS_DIR = DATA_DIR / "channels"
 BRIDGE_SECRET_FILE = CHANNELS_DIR / "bridge_secret"
 
 

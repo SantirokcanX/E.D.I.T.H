@@ -2,8 +2,10 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Cargar variables de entorno desde el archivo .env en la raíz del proyecto
-env_path = Path(__file__).resolve().parent.parent / ".env"
+from .paths import env_file
+
+# .env del proyecto (desarrollo) o, en la app instalada, el de %LOCALAPPDATA%\EDITH
+env_path = env_file()
 load_dotenv(dotenv_path=env_path)
 
 _TRUE = ("1", "true", "yes", "si", "sí")

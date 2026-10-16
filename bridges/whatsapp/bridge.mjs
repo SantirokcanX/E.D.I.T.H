@@ -22,10 +22,13 @@ import qrcodeTerminal from 'qrcode-terminal'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '..', '..')
-const DATA_DIR = path.join(ROOT, 'data', 'channels', 'whatsapp')
+// EDITH le pasa su carpeta de datos (%LOCALAPPDATA%\EDITH\data); si se ejecuta suelto, se calcula igual
+const EDITH_DATA = process.env.EDITH_DATA_DIR ||
+  (process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'EDITH', 'data') : path.join(ROOT, 'data'))
+const DATA_DIR = path.join(EDITH_DATA, 'channels', 'whatsapp')
 const AUTH_DIR = path.join(DATA_DIR, 'auth')
 const QR_FILE = path.join(DATA_DIR, 'qr.png')
-const SECRET_FILE = path.join(ROOT, 'data', 'channels', 'bridge_secret')
+const SECRET_FILE = path.join(EDITH_DATA, 'channels', 'bridge_secret')
 const EDITH_URL = (process.env.EDITH_URL || 'http://127.0.0.1:8000').replace(/\/$/, '')
 const PORT = Number(process.env.BRIDGE_PORT || 3100)
 const MAX_AUDIO_BYTES = 10 * 1024 * 1024

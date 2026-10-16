@@ -11,8 +11,8 @@ class ErrorLearner:
     """Registra errores, extrae lecciones aprendidas y las inyecta en razonamientos futuros."""
 
     def __init__(self, storage_path: Optional[str] = None):
-        base_dir = Path(__file__).resolve().parent.parent.parent
-        self.storage_dir = Path(storage_path) if storage_path else base_dir / "data" / "learnings"
+        from ..paths import DATA_DIR
+        self.storage_dir = Path(storage_path) if storage_path else DATA_DIR / "learnings"
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         self.file_path = self.storage_dir / "error_learnings.json"
         self.learnings: List[Dict[str, Any]] = self._load_learnings()

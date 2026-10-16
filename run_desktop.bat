@@ -3,7 +3,7 @@ chcp 65001 > nul
 title EDITH Desktop Application
 
 echo ========================================================
-echo   👓 E.D.I.T.H. (Aplicacion Nativa de Escritorio)
+echo   E.D.I.T.H. - modo depuracion (con consola)
 echo ========================================================
 echo.
 
@@ -19,7 +19,7 @@ if "%ERRORLEVEL%"=="1" (
     start "" /B ollama serve >NUL 2>&1
 )
 
-echo Iniciando ventana de escritorio nativa...
+echo Iniciando EDITH con consola visible para ver los mensajes. Uso normal: EDITH.exe
 python desktop/desktop_app.py
 
 if %ERRORLEVEL% NEQ 0 (

@@ -14,8 +14,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
-REMINDERS_FILE = BASE_DIR / "data" / "reminders.json"
+from ..paths import DATA_DIR
+
+REMINDERS_FILE = DATA_DIR / "reminders.json"
 _lock = threading.RLock()
 
 REPEATS = ("none", "daily", "weekly")

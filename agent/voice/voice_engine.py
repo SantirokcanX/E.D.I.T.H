@@ -55,8 +55,8 @@ class VoiceEngine:
     def __init__(self, voice_key: Optional[str] = None, output_dir: Optional[str] = None, enabled: bool = True):
         self.voice_key = voice_key if voice_key in self.VOICES else self.DEFAULT_VOICE_KEY
         self.enabled = enabled
-        base_dir = Path(__file__).resolve().parent.parent.parent
-        self.output_dir = Path(output_dir) if output_dir else base_dir / "data" / "audio"
+        from ..paths import DATA_DIR
+        self.output_dir = Path(output_dir) if output_dir else DATA_DIR / "audio"
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self._current_playback_thread: Optional[threading.Thread] = None
 

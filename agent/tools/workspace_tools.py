@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
-WORKSPACE_DIR = Path(__file__).resolve().parent.parent.parent / "workspace"
+from ..paths import WORKSPACE_DIR
 WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
 
 

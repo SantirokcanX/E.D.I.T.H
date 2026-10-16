@@ -15,13 +15,14 @@ from agent.channels import notifier
 from agent.channels import telephony, whatsapp
 from agent.channels.security import check_bridge_secret, canonical_number
 from agent.config import Config
+from agent.paths import DATA_DIR, LOGS_DIR
 from agent.heartbeat import Heartbeat
 from agent.tools import reminder_tools
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 BRIDGE_DIR = BASE_DIR / "bridges" / "whatsapp"
-QR_FILE = BASE_DIR / "data" / "channels" / "whatsapp" / "qr.png"
-BRIDGE_LOG = BASE_DIR / "data" / "channels" / "whatsapp" / "bridge.log"
+QR_FILE = DATA_DIR / "channels" / "whatsapp" / "qr.png"
+BRIDGE_LOG = LOGS_DIR / "whatsapp-bridge.log"
 
 router = APIRouter()
 _state = {"provider": None, "heartbeat": None, "bridge": None}
@@ -64,7 +65,7 @@ def _start_bridge(port: int):
     BRIDGE_LOG.parent.mkdir(parents=True, exist_ok=True)
     log = open(BRIDGE_LOG, "a", encoding="utf-8")
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
-    env = {**__import__("os").environ, "EDITH_URL": f"http://127.0.0.1:{port}"}
+    env = {**__import__("os").environ, "EDITH_URL": f"http://127.0.0.1:{port}", "EDITH_DATA_DIR": str(DATA_DIR)}
     _state["bridge"] = subprocess.Popen([node, "bridge.mjs"], cwd=str(BRIDGE_DIR), stdout=log, stderr=log,
                                         creationflags=flags, env=env)
     print(f"[WhatsApp] bridge iniciado (log: {BRIDGE_LOG})")

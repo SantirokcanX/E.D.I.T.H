@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 from agent.config import Config
+from agent.paths import DATA_DIR
 from agent.providers import get_provider
 from agent.core.reasoning_agent import ReasoningAgent, AgentCallbacks
 from agent.coworking.team import CoworkingTeam, TeamMemberEvent
@@ -43,7 +44,7 @@ async def revalidate_static(request, call_next):
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
-AUDIO_DIR = BASE_DIR / "data" / "audio"
+AUDIO_DIR = DATA_DIR / "audio"
 AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 
 # Instancia global del agente y equipo

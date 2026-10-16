@@ -9,3 +9,6 @@ data/reminders.json
 data/heartbeat_state.json
 bridges/whatsapp/node_modules/
 .env.backup-*
+
+# Lanzador compilado (se genera con desktop/launcher/build_launcher.bat o install_edith.bat)
+EDITH.exe

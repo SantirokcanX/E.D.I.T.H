@@ -12,8 +12,9 @@ from PIL import Image, ImageGrab
 import psutil
 
 # Directorio de capturas dentro del workspace
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
-SCREENSHOTS_DIR = BASE_DIR / "workspace" / "screenshots"
+from ..paths import WORKSPACE_DIR
+
+SCREENSHOTS_DIR = WORKSPACE_DIR / "screenshots"
 SCREENSHOTS_DIR.mkdir(parents=True, exist_ok=True)
 
 

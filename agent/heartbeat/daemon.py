@@ -22,8 +22,9 @@ from ..config import Config
 from ..core.concurrency import LLM_LOCK
 from ..tools import reminder_tools
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
-STATE_FILE = BASE_DIR / "data" / "heartbeat_state.json"
+from ..paths import DATA_DIR
+
+STATE_FILE = DATA_DIR / "heartbeat_state.json"
 
 # Tareas de Obsidian con fecha: "- [ ] Entregar informe 📅 2026-10-16", "due:: 2026-10-16" o "@2026-10-16"
 DIAS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
@@ -220,9 +221,15 @@ class Heartbeat:
                              whatsapp_text=f"☀️ *Resumen matutino*\n\n{text}")
         note = None
         try:
-            from ..tools.obsidian_tools import create_note
-            note = create_note(f"{now:%Y-%m-%d} - Resumen matutino", text, folder="01 - Diario",
-                               tags=["edith", "resumen-matutino"], overwrite=True).get("note")
+            from ..tools.obsidian_tools import _note_path, create_note, get_vault_path
+            title = f"{now:%Y-%m-%d} - Resumen matutino"
+            existing = _note_path(title, "01 - Diario")
+            if existing.exists():
+                # Otra EDITH (p. ej. la de la laptop y la del servidor) ya lo escribió hoy: no se pisa
+                note = str(existing.relative_to(get_vault_path())).replace("\\", "/")
+            else:
+                note = create_note(title, text, folder="01 - Diario",
+                                   tags=["edith", "resumen-matutino"]).get("note")
         except Exception as e:
             print(f"[Heartbeat] no se pudo guardar el resumen en Obsidian: {e}")
         return {"text": text, "note": note, "facts": facts}
