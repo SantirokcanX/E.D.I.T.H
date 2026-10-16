@@ -163,6 +163,21 @@ class OllamaProvider(BaseLLMProvider):
             })
         return ollama_tools
 
+    @staticmethod
+    def _trim_history(payload: Dict[str, Any]) -> bool:
+        """Deja solo los mensajes de sistema iniciales y el turno actual (desde el último
+        mensaje del usuario). Devuelve False si ya no hay nada que recortar."""
+        msgs = payload.get("messages", [])
+        last_user = max((i for i, m in enumerate(msgs) if m.get("role") == "user"), default=None)
+        if last_user is None:
+            return False
+        head = [m for m in msgs[:last_user] if m.get("role") == "system"]
+        trimmed = head + msgs[last_user:]
+        if len(trimmed) >= len(msgs):
+            return False
+        payload["messages"] = trimmed
+        return True
+
     def _open_stream(self, payload: Dict[str, Any]):
         """Abre el stream de /api/chat. Si el modelo no soporta `tools` o `think`,
         reintenta sin esa opción y lo recuerda para no volver a pagar el error."""
@@ -180,6 +195,12 @@ class OllamaProvider(BaseLLMProvider):
                     self._no_think.add(payload["model"])
                     payload.pop("think", None)
                     continue
+                if "exceed" in body and "context" in body and self._trim_history(payload):
+                    continue  # conversación demasiado larga: reintentar con solo el turno actual
+                if "exceed" in body and "context" in body:
+                    raise RuntimeError(
+                        "El mensaje no cabe en la memoria de trabajo del modelo (OLLAMA_NUM_CTX). "
+                        "Prueba con un texto más corto o sube OLLAMA_NUM_CTX en .env.")
                 raise RuntimeError(f"Error de Ollama (400): {body}")
             if response.status_code != 200:
                 body = response.read().decode("utf-8", errors="replace")

@@ -11,7 +11,12 @@ from typing import List, Dict, Any, Optional
 class MemoryManager:
     """Administra sesiones de conversación guardadas y memoria de perfil a largo plazo."""
 
-    def __init__(self, data_dir: Optional[str] = None):
+    def __init__(self, data_dir: Optional[str] = None, session_prefix: str = "session",
+                 default_title: str = "Conversación"):
+        # Cada canal (interfaz, WhatsApp de un contacto, llamadas) guarda sus charlas con su
+        # propio prefijo: todas aparecen en el historial, pero cada canal retoma solo las suyas.
+        self.session_prefix = session_prefix
+        self.default_title = default_title
         base_dir = Path(__file__).resolve().parent.parent.parent
         self.data_dir = Path(data_dir) if data_dir else base_dir / "data"
         self.sessions_dir = self.data_dir / "sessions"
@@ -26,10 +31,13 @@ class MemoryManager:
 
     def _get_or_create_active_session_id(self) -> str:
         # Buscar la última sesión activa o generar una nueva
-        sessions = self.list_sessions()
+        sessions = [s for s in self.list_sessions() if s["id"].startswith(self.session_prefix + "_")]
         if sessions:
             return sessions[0]["id"]
-        return f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        return self._new_session_id()
+
+    def _new_session_id(self) -> str:
+        return f"{self.session_prefix}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
     def _load_long_term_data(self) -> Dict[str, Any]:
         if not self.long_term_file.exists():
@@ -68,7 +76,7 @@ class MemoryManager:
 
     def create_new_session(self, title: str = "Nueva conversación") -> str:
         """Crea una nueva sesión y la establece como la activa."""
-        session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        session_id = self._new_session_id()
         self.current_session_id = session_id
         session_data = {
             "id": session_id,
@@ -110,7 +118,7 @@ class MemoryManager:
                 msg_copy["tool_calls"] = tc_serialized
             serializable_messages.append(msg_copy)
 
-        title = "Conversación"
+        title = self.default_title
         created_at = datetime.now().isoformat()
 
         if session_path.exists():
@@ -123,8 +131,9 @@ class MemoryManager:
                 pass
 
         # Títulos genéricos se reemplazan por el primer mensaje del usuario
-        if title in ("Conversación", "Nueva conversación", "Nueva charla con EDITH") and title_candidate:
-            title = title_candidate[:45] + ("..." if len(title_candidate) > 45 else "")
+        if title in ("Conversación", "Nueva conversación", "Nueva charla con EDITH", self.default_title) and title_candidate:
+            label = "" if self.default_title in ("Conversación",) else self.default_title + ": "
+            title = label + title_candidate[:45] + ("..." if len(title_candidate) > 45 else "")
 
         data = {
             "id": self.current_session_id,
@@ -184,7 +193,7 @@ class MemoryManager:
         except OSError:
             return False
         if session_id == self.current_session_id:
-            self.current_session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            self.current_session_id = self._new_session_id()
         return True
 
     def search_sessions(self, query: str) -> List[Dict[str, Any]]:

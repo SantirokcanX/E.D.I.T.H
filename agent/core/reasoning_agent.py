@@ -3,6 +3,7 @@
 import json
 import re
 import threading
+from datetime import datetime, timedelta
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Callable
 
@@ -32,11 +33,15 @@ from ..tools import (
     list_obsidian_notes,
     read_clipboard,
     write_clipboard,
+    create_reminder,
+    list_reminders,
+    cancel_reminder,
     ALL_TOOLS_METADATA
 )
 from ..memory.memory_manager import get_memory_manager, MemoryManager
 from ..learning.error_learner import get_error_learner, ErrorLearner
 from ..config import Config
+from .concurrency import LLM_LOCK
 
 try:  # El subsistema ML es opcional: si falta scikit-learn, EDITH sigue funcionando igual
     from ..ml import get_ml_engine
@@ -117,6 +122,11 @@ TUS CAPACIDADES CLAVE:
    - La bóveda de Obsidian del usuario es tu cuaderno táctico: `obsidian_search`, `obsidian_list_notes` y `obsidian_read_note` para consultar lo que ya sabe, `obsidian_create_note` / `obsidian_append_note` para guardar ideas, resúmenes y planes (usa [[wikilinks]] entre notas), y `obsidian_sync_session` para archivar la conversación actual en su diario.
    - `read_clipboard` lee lo que el usuario copió con Ctrl+C ("explica lo que copié"); `write_clipboard` le deja un texto listo para pegar.
 
+6. RECORDATORIOS Y ALARMAS:
+   - Con `create_reminder` programas avisos que llegan a la interfaz, a Windows y al WhatsApp del usuario. Si dice "urgente" o "si no contesto llámame", usa critical=true.
+   - En `when` NO calcules fechas: copia cómo lo dijo el usuario. "en 30 minutos" -> `+30m`; "el viernes a las 7:30 am" -> `viernes 07:30`; "mañana a las 9" -> `mañana 09:00`.
+   - Los recordatorios activos aparecen en el contexto como [Recordatorios activos]: úsalos para responder qué hay pendiente.
+
 REGLA DE ORO: HONESTIDAD, AUTONOMÍA Y LEALTAD AL USUARIO:
 - Trata al usuario como un adulto capaz: sin sermones, sin moralejas, sin advertencias de relleno ni disclaimers repetitivos. Responde directo a lo que pide.
 - No digas "no puedo" por timidez: si algo es posible y legítimo, hazlo. Si falta información, pregunta una sola cosa concreta.
@@ -138,10 +148,17 @@ FORMATO (la interfaz renderiza Markdown, LaTeX y código con resaltado):
 class ReasoningAgent:
     """Orquestador central de EDITH: Compañera cotidiana con Pensamiento Abstracto, Acción y Memoria."""
 
-    def __init__(self, provider: BaseLLMProvider, max_iterations: int = 6):
+    def __init__(self, provider: BaseLLMProvider, max_iterations: int = 6,
+                 memory: Optional[MemoryManager] = None,
+                 blocked_tools: Optional[set] = None, channel_note: str = ""):
         self.provider = provider
         self.max_iterations = max_iterations
-        self.memory: MemoryManager = get_memory_manager()
+        # Cada canal puede tener su propia memoria de sesiones (WhatsApp, llamadas...)
+        self.memory: MemoryManager = memory or get_memory_manager()
+        # Herramientas prohibidas en este agente (p. ej. PowerShell desde WhatsApp)
+        self.blocked_tools = set(blocked_tools or ())
+        self.tools_metadata = [t for t in ALL_TOOLS_METADATA if t["name"] not in self.blocked_tools]
+        self.channel_note = channel_note.strip()
         self.learner: ErrorLearner = get_error_learner()
         self.conversation_history: List[Dict[str, Any]] = []
         self.ml = None
@@ -157,14 +174,35 @@ class ReasoningAgent:
         `_dynamic_context`: así Ollama reutiliza la caché del prefijo (system + historial)
         y no tiene que volver a procesar toda la conversación en cada mensaje."""
         prompt = EDITH_SYSTEM_PROMPT
+        if self.channel_note:
+            prompt += f"\n{self.channel_note}\n"
         long_term = self.memory.get_long_term_context()
         if long_term:
             prompt += f"\n{long_term}"
         return prompt
 
     def _dynamic_context(self, query: str) -> str:
-        """Lecciones aprendidas y recuerdos relevantes para ESTA consulta."""
-        parts = []
+        """Fecha actual, lecciones aprendidas y recuerdos relevantes para ESTA consulta."""
+        dias = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+        now = datetime.now()
+        # Calendario ya resuelto: los modelos pequeños fallan calculando "el viernes" o "mañana"
+        upcoming = ", ".join(
+            f"{'mañana ' if i == 1 else ''}{dias[(now + timedelta(days=i)).weekday()]} {(now + timedelta(days=i)):%Y-%m-%d}"
+            for i in range(1, 8))
+        parts = [f"[Fecha y hora actual: {dias[now.weekday()]} {now:%Y-%m-%d %H:%M} (24 h, hora local). "
+                 f"Próximos días: {upcoming}]"]
+        try:  # estado real de los recordatorios: el modelo no tiene que recordarlos ni consultarlos
+            active = list_reminders()
+            if active:
+                lines = "; ".join(
+                    f"{r['id']}: {r['text']} — {r['due'].replace('T', ' ')}"
+                    f"{' (crítico)' if r['critical'] else ''}{' (esperando confirmación)' if r['status'] == 'fired' else ''}"
+                    for r in active[:10])
+                parts.append(f"[Recordatorios activos ({len(active)}): {lines}]")
+            else:
+                parts.append("[Recordatorios activos: ninguno]")
+        except Exception:
+            pass
         rules = self.learner.get_contextual_rules(query)
         if rules:
             parts.append(rules.strip())
@@ -236,6 +274,9 @@ class ReasoningAgent:
         threading.Thread(target=_sync, daemon=True).start()
 
     def _execute_tool(self, tool_name: str, args: Dict[str, Any], sources_collector: List[Dict[str, str]]) -> Any:
+        if tool_name in self.blocked_tools:
+            return {"error": f"La herramienta '{tool_name}' está desactivada en este canal por seguridad. "
+                             "Explícale al usuario que solo puede usarla desde la laptop."}
         try:
             if tool_name == "web_search":
                 query = args.get("query", "")
@@ -333,6 +374,17 @@ class ReasoningAgent:
             elif tool_name == "list_obsidian_notes":
                 return list_obsidian_notes(folder=args.get("folder", ""))
 
+            elif tool_name == "create_reminder":
+                return create_reminder(text=args.get("text", ""), when=args.get("when", ""),
+                                       critical=bool(args.get("critical", False)),
+                                       repeat=args.get("repeat", "none") or "none")
+
+            elif tool_name == "list_reminders":
+                return list_reminders()
+
+            elif tool_name == "cancel_reminder":
+                return cancel_reminder(reminder_id=args.get("reminder_id", ""))
+
             elif tool_name == "read_clipboard":
                 return read_clipboard()
 
@@ -359,6 +411,12 @@ class ReasoningAgent:
 
     def run(self, user_prompt: str, callbacks: Optional[AgentCallbacks] = None,
             think: Optional[bool] = None) -> AgentRunResult:
+        # Un turno a la vez en el modelo local, venga del canal que venga
+        with LLM_LOCK:
+            return self._run(user_prompt, callbacks, think)
+
+    def _run(self, user_prompt: str, callbacks: Optional[AgentCallbacks] = None,
+             think: Optional[bool] = None) -> AgentRunResult:
         callbacks = callbacks or AgentCallbacks()
         deep = self.resolve_think(user_prompt, think)
         turn_start = len(self.conversation_history)
@@ -378,7 +436,7 @@ class ReasoningAgent:
 
             step_response = self.provider.generate_step(
                 messages=self._provider_messages(turn_start, user_prompt, dynamic_context),
-                tools_metadata=ALL_TOOLS_METADATA,
+                tools_metadata=self.tools_metadata,
                 on_thought_chunk=callbacks.on_thought_chunk,
                 on_content_chunk=callbacks.on_content_chunk,
                 think=deep

@@ -1,6 +1,7 @@
 """Main entrypoint for EDITH: AI Reasoning, Co-Working, Voice, and Web IDE."""
 
 import argparse
+import os
 import sys
 import uvicorn
 from agent.cli.ui import AgentCLI
@@ -74,6 +75,7 @@ def parse_args():
 def start_ide(port: int = 8000):
     print(f"\n👓 Iniciando EDITH Studio (Web IDE)...")
     print(f"👉 Abre tu navegador en: http://localhost:{port}\n")
+    os.environ["EDITH_PORT"] = str(port)  # el bridge de WhatsApp necesita saber dónde está EDITH
     uvicorn.run("ide.server:app", host="127.0.0.1", port=port, log_level="info")
 
 

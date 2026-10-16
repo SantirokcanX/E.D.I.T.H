@@ -30,6 +30,7 @@ from .obsidian_tools import (
     OBSIDIAN_TOOLS_METADATA
 )
 from .clipboard_tools import read_clipboard, write_clipboard, CLIPBOARD_TOOLS_METADATA
+from .reminder_tools import create_reminder, list_reminders, cancel_reminder, REMINDER_TOOLS_METADATA
 from .screen_tools import (
     capture_screen,
     analyze_screen,
@@ -75,8 +76,16 @@ ALL_TOOLS_METADATA = (
     DIAGRAM_TOOLS_METADATA +
     SCREEN_TOOLS_METADATA +
     OBSIDIAN_TOOLS_METADATA +
-    CLIPBOARD_TOOLS_METADATA
+    CLIPBOARD_TOOLS_METADATA +
+    REMINDER_TOOLS_METADATA
 )
+
+# Herramientas que tocan la máquina directamente: bloqueadas desde canales remotos
+# (WhatsApp, teléfono) salvo REMOTE_ALLOW_SYSTEM_TOOLS=true.
+LOCAL_ONLY_TOOLS = {
+    "run_system_command", "open_application", "control_system_volume",
+    "capture_screen", "analyze_screen", "read_clipboard", "write_clipboard",
+}
 
 __all__ = [
     "web_search",
@@ -104,6 +113,11 @@ __all__ = [
     "list_obsidian_notes",
     "read_clipboard",
     "write_clipboard",
+    "create_reminder",
+    "list_reminders",
+    "cancel_reminder",
+    "REMINDER_TOOLS_METADATA",
+    "LOCAL_ONLY_TOOLS",
     "OBSIDIAN_TOOLS_METADATA",
     "CLIPBOARD_TOOLS_METADATA",
     "SEARCH_TOOLS_METADATA",

@@ -236,6 +236,11 @@ function handleWsMessage(data) {
       checkAndRenderDiagramsInText(data.content);
       break;
 
+    case "notification":
+      showNotificationToast(data);
+      if (document.getElementById("systemTab")?.classList.contains("active")) loadChannels();
+      break;
+
     case "audio_ready":
       if (voiceEnabled) playVoiceAudio(data.audio_url);
       break;
@@ -569,6 +574,126 @@ async function saveCurrentFile() {
   } catch (e) {
     alert("Error al guardar archivo: " + e);
   }
+}
+
+// 8a. Fases 9-11: canales (WhatsApp, teléfono), Heartbeat, recordatorios y avisos
+function showNotificationToast(n) {
+  const stack = document.getElementById("toastStack");
+  const el = document.createElement("div");
+  el.className = `toast toast-${n.level || "info"}`;
+  el.setAttribute("role", n.level === "critical" ? "alert" : "status");
+  el.innerHTML = `<div class="toast-title"></div><div class="toast-body"></div>`;
+  el.querySelector(".toast-title").textContent = (n.level === "critical" ? "🚨 " : "🔔 ") + n.title;
+  el.querySelector(".toast-body").textContent = n.message;
+  const actions = document.createElement("div");
+  actions.className = "toast-actions";
+  if (n.level === "critical" && n.reminder_id) {
+    const ack = document.createElement("button");
+    ack.textContent = "Confirmar";
+    ack.addEventListener("click", async () => {
+      await fetch(`/api/reminders/${encodeURIComponent(n.reminder_id)}/ack`, { method: "POST" });
+      el.remove();
+      loadReminders();
+    });
+    actions.appendChild(ack);
+  }
+  const close = document.createElement("button");
+  close.textContent = "Cerrar";
+  close.addEventListener("click", () => el.remove());
+  actions.appendChild(close);
+  el.appendChild(actions);
+  stack.appendChild(el);
+  if (n.level !== "critical") setTimeout(() => el.remove(), 12000);
+}
+
+async function loadChannels() {
+  const rows = document.getElementById("channelRows");
+  const qr = document.getElementById("whatsappQr");
+  try {
+    const s = await (await fetch("/api/channels/status")).json();
+    const wa = s.whatsapp || {};
+    const ph = s.phone || {};
+    const hb = s.heartbeat || {};
+    const items = [
+      ["Números autorizados", s.authorized_numbers ? `${s.authorized_numbers} (aviso a ${s.owner})` : "ninguno — los canales remotos están cerrados", s.authorized_numbers > 0],
+      ["WhatsApp", !wa.enabled ? "desactivado" : wa.connected ? `conectado como …${String(wa.me || "").slice(-4)}` : wa.qr_pending || wa.qr_available ? "esperando vinculación (escanea el QR)" : (wa.error || "desconectado"), !!wa.connected],
+      ["Teléfono (Twilio)", ph.configured ? `${ph.mode}${ph.public_url ? "" : " · falta PUBLIC_BASE_URL"}` : "sin configurar", ph.configured && ph.public_url],
+      ["Heartbeat", hb.running ? `cada ${hb.every_minutes} min · resumen ${hb.morning_briefing || "off"} · silencio ${hb.quiet_hours}` : "detenido", !!hb.running],
+      ["PowerShell desde remoto", s.remote_system_tools ? "PERMITIDO" : "bloqueado", !s.remote_system_tools],
+    ];
+    rows.innerHTML = "";
+    for (const [label, value, ok] of items) {
+      const row = document.createElement("div");
+      row.className = "channel-row";
+      row.innerHTML = `<span class="dot ${ok ? "ok" : "off"}"></span><span class="label"></span><span class="value"></span>`;
+      row.querySelector(".label").textContent = label;
+      row.querySelector(".value").textContent = value;
+      rows.appendChild(row);
+    }
+    if (wa.qr_available) {
+      qr.src = `/api/channels/whatsapp/qr?ts=${Date.now()}`;
+      qr.hidden = false;
+    } else {
+      qr.hidden = true;
+    }
+  } catch (e) {
+    rows.textContent = "No se pudo consultar el estado de los canales.";
+  }
+}
+
+async function loadReminders() {
+  const list = document.getElementById("reminderList");
+  try {
+    const items = await (await fetch("/api/reminders")).json();
+    list.innerHTML = items.length ? "" : `<li class="reminder-empty">Sin recordatorios activos. También puedes pedírselos a EDITH: "recuérdame mañana a las 9…"</li>`;
+    for (const r of items) {
+      const li = document.createElement("li");
+      li.className = "reminder-item" + (r.status === "fired" ? " waiting" : "");
+      const when = new Date(r.due).toLocaleString("es", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+      li.innerHTML = `<div><div class="reminder-text"></div><div class="reminder-meta"></div></div><button type="button"></button>`;
+      li.querySelector(".reminder-text").textContent = (r.critical ? "🚨 " : "") + r.text;
+      li.querySelector(".reminder-meta").textContent = `${when}${r.repeat !== "none" ? " · se repite " + (r.repeat === "daily" ? "a diario" : "cada semana") : ""}${r.status === "fired" ? " · esperando confirmación" : ""}`;
+      const btn = li.querySelector("button");
+      btn.textContent = r.status === "fired" ? "Confirmar" : "Cancelar";
+      btn.addEventListener("click", async () => {
+        const url = r.status === "fired" ? `/api/reminders/${r.id}/ack` : `/api/reminders/${r.id}`;
+        await fetch(url, { method: r.status === "fired" ? "POST" : "DELETE" });
+        loadReminders();
+      });
+      list.appendChild(li);
+    }
+  } catch (e) {}
+}
+
+function setupReminders() {
+  const form = document.getElementById("reminderForm");
+  const when = document.getElementById("reminderWhen");
+  const soon = new Date(Date.now() + 60 * 60 * 1000);
+  soon.setMinutes(soon.getMinutes() - soon.getTimezoneOffset());
+  when.value = soon.toISOString().slice(0, 16);
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const res = await fetch("/api/reminders", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text: document.getElementById("reminderText").value,
+        when: when.value,
+        critical: document.getElementById("reminderCritical").checked,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert(err.detail || "No se pudo crear el recordatorio.");
+      return;
+    }
+    document.getElementById("reminderText").value = "";
+    document.getElementById("reminderCritical").checked = false;
+    loadReminders();
+  });
+  document.querySelectorAll('[data-tab="systemTab"]').forEach((b) =>
+    b.addEventListener("click", () => { loadChannels(); loadReminders(); }));
+  loadReminders();
 }
 
 // 8b. Historial de conversaciones
@@ -947,7 +1072,8 @@ function setupEventListeners() {
   setupMlListeners();
 
   document.getElementById("btnSaveFile").addEventListener("click", saveCurrentFile);
-  document.getElementById("btnRefreshSystem").addEventListener("click", loadSystemStatus);
+  document.getElementById("btnRefreshSystem").addEventListener("click", () => { loadSystemStatus(); loadChannels(); });
+  setupReminders();
   document.getElementById("btnRefreshLearnings").addEventListener("click", loadLearnings);
 
   // Descarga de Diagrama SVG

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>EDITH</title>
   <link rel="icon" type="image/png" href="logo.png" />
-  <link rel="stylesheet" href="styles.css?v=0.0.4" />
+  <link rel="stylesheet" href="styles.css?v=0.0.5" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -213,6 +213,21 @@ mindmap
                 <button class="btn-vol" onclick="adjustVolume('mute')">🔇 Silenciar</button>
               </div>
             </div>
+            <div class="channels-card" id="channelsCard">
+              <span class="section-title">Canales y autonomía</span>
+              <div class="channel-rows" id="channelRows">Consultando...</div>
+              <img id="whatsappQr" class="whatsapp-qr" alt="QR para vincular WhatsApp" hidden>
+            </div>
+            <div class="reminders-card">
+              <span class="section-title">Recordatorios</span>
+              <form id="reminderForm" class="reminder-form">
+                <input id="reminderText" type="text" placeholder="¿Qué te recuerdo?" required maxlength="300" aria-label="Texto del recordatorio">
+                <input id="reminderWhen" type="datetime-local" required aria-label="Fecha y hora">
+                <label class="reminder-critical"><input id="reminderCritical" type="checkbox"> Crítico</label>
+                <button type="submit">Añadir</button>
+              </form>
+              <ul class="reminder-list" id="reminderList"></ul>
+            </div>
             <div class="hardware-card" id="hardwareCardDetails">
               <span class="section-title">Hardware</span>
               <pre id="hardwareDetails">Consultando estado...</pre>
@@ -252,9 +267,10 @@ mindmap
 
   </div>
 
+  <div class="toast-stack" id="toastStack" aria-live="polite"></div>
   <audio id="edithAudio" preload="auto"></audio>
 
-  <script src="render.js?v=0.0.4"></script>
-  <script src="app.js?v=0.0.4"></script>
+  <script src="render.js?v=0.0.5"></script>
+  <script src="app.js?v=0.0.5"></script>
 </body>
 </html>

@@ -2,3 +2,10 @@
 __pycache__/ 
 *.pyc 
 data/ml/
+
+# Fases 9-11: credenciales y estado local (nunca al repositorio)
+data/channels/
+data/reminders.json
+data/heartbeat_state.json
+bridges/whatsapp/node_modules/
+.env.backup-*

@@ -11,9 +11,11 @@ WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
 def get_workspace_path(filename: str) -> Path:
     """Resuelve la ruta segura dentro del directorio workspace."""
     clean_name = filename.strip("/\\")
-    resolved = (WORKSPACE_DIR / clean_name).resolve()
-    # Protección de traversal de directorios
-    if not str(resolved).startswith(str(WORKSPACE_DIR.resolve())):
+    root = WORKSPACE_DIR.resolve()
+    resolved = (root / clean_name).resolve()
+    # Protección de traversal: comparar por componentes de ruta, no por prefijo de texto
+    # (con startswith, "../workspace_x/archivo" se colaba porque "workspace_x" empieza por "workspace")
+    if resolved != root and root not in resolved.parents:
         raise ValueError("Acceso denegado: intento de salida del directorio workspace.")
     return resolved
 

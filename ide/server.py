@@ -21,6 +21,7 @@ from agent.learning.error_learner import get_error_learner
 from agent.tools.workspace_tools import WORKSPACE_DIR, save_to_workspace, read_workspace_file, list_workspace_files
 from agent.tools.system_tools import get_system_status, open_application, run_system_command, control_system_volume
 from agent.tools.obsidian_tools import get_vault_path, sync_edith_session, search_vault
+from ide.channels_api import router as channels_router, start_channels, stop_channels
 
 try:  # ML opcional
     from agent.ml import get_ml_engine, ROUTES as ML_ROUTES
@@ -292,6 +293,7 @@ async def send_voice(websocket: WebSocket, text: str):
 @app.websocket("/ws/chat")
 async def websocket_chat(websocket: WebSocket):
     await websocket.accept()
+    ui_clients.add(websocket)
 
     try:
         while True:
@@ -441,6 +443,33 @@ async def websocket_chat(websocket: WebSocket):
             await websocket.send_json({"type": "error", "message": str(e)})
         except Exception:
             pass
+    finally:
+        ui_clients.discard(websocket)
 
 
+# ---------- Fases 9-11: canales remotos, notificaciones y Heartbeat ----------
+ui_clients: set = set()
+
+
+async def broadcast_ui(event: dict):
+    """Envía un evento (p. ej. una notificación del Heartbeat) a todas las pestañas abiertas."""
+    for ws in list(ui_clients):
+        try:
+            await ws.send_json(event)
+        except Exception:
+            ui_clients.discard(ws)
+
+
+@app.on_event("startup")
+async def _startup_channels():
+    port = int(os.getenv("EDITH_PORT", "8000"))
+    start_channels(provider, broadcast_ui, asyncio.get_running_loop(), port=port)
+
+
+@app.on_event("shutdown")
+async def _shutdown_channels():
+    stop_channels()
+
+
+app.include_router(channels_router)
 app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
