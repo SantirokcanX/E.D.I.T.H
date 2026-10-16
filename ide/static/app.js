@@ -22,6 +22,18 @@ try { reasoningMode = localStorage.getItem("edith.reasoning") || "auto"; } catch
 if (!REASONING_MODES[reasoningMode]) reasoningMode = "auto";
 let lastTurnDeep = null;
 
+// Fase 14: la API exige el token (cookie HttpOnly). Si caducó o cambió, avisar una vez en vez de fallar en silencio.
+const nativeFetch = window.fetch.bind(window);
+let authWarned = false;
+window.fetch = async (...args) => {
+  const res = await nativeFetch(...args);
+  if (res.status === 401 && !authWarned) {
+    authWarned = true;
+    showNotificationToast({ level: "warning", title: "Sesión caducada", message: "Recarga la página para volver a entrar en EDITH." });
+  }
+  return res;
+};
+
 document.addEventListener("DOMContentLoaded", () => {
   initMermaid();
   initWebSocket();
@@ -43,6 +55,7 @@ function initMermaid() {
   if (window.mermaid) {
     mermaid.initialize({
       startOnLoad: false,
+      securityLevel: 'strict', // los diagramas los escribe el modelo: sin HTML ni clics con código
       theme: 'dark',
       themeVariables: {
         darkMode: true,
@@ -175,6 +188,7 @@ function initWebSocket() {
   };
 
   ws.onclose = () => {
+    clearConfirmations(); // el servidor da por rechazadas las que estaban pendientes
     setTimeout(initWebSocket, 3000);
   };
 }
@@ -212,6 +226,14 @@ function handleWsMessage(data) {
     case "tool_call":
       resetStreamingBubble();
       appendToolCallBanner(data.tool, data.args);
+      break;
+
+    case "confirm_request":
+      handleConfirmRequest(data);
+      break;
+
+    case "confirm_expired":
+      expireConfirmation(data.id);
       break;
 
     case "team_event":
@@ -311,10 +333,15 @@ function appendAssistantMessage(markdownContent, sources = [], deep = undefined)
 
   let sourcesHtml = "";
   if (sources && sources.length > 0) {
+    // Títulos y URLs vienen de la web: se escapan y solo se enlazan http(s)
     sourcesHtml = `
       <div class="sources-box">
         <strong>Fuentes consultadas:</strong>
-        ${sources.map(s => `<a href="${s.url}" target="_blank" rel="noopener">🌐 ${s.title || s.url}</a>`).join("")}
+        ${sources.map(s => {
+          const url = safeHttpUrl(s.url);
+          const label = escapeHtml(String(s.title || s.url || "Fuente"));
+          return url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">🌐 ${label}</a>` : `<span>🌐 ${label}</span>`;
+        }).join("")}
       </div>
     `;
   }
@@ -387,7 +414,7 @@ function handleTeamEvent(data) {
   item.innerHTML = `
     <div class="msg-header">
       ${avatarHtml}
-      <span class="name">${data.member} (${data.role})</span>
+      <span class="name">${escapeHtml(String(data.member))} (${escapeHtml(String(data.role))})</span>
     </div>
     <div class="msg-body">
       ${EdithRender.toHtml(data.content || '')}
@@ -431,7 +458,11 @@ function checkAndRenderDiagramsInText(text) {
 async function displayDiagramInCenterView(title, code) {
   document.getElementById("diagramTitle").innerText = title;
   const container = document.getElementById("diagramRenderArea");
-  container.innerHTML = `<div class="mermaid">${code}</div>`;
+  // El código del diagrama es texto (lo escribe el modelo): nunca se inserta como HTML
+  const div = document.createElement("div");
+  div.className = "mermaid";
+  div.textContent = code;
+  container.replaceChildren(div);
   if (window.mermaid) {
     try {
       await mermaid.run({ nodes: container.querySelectorAll(".mermaid") });
@@ -508,7 +539,7 @@ async function loadWorkspaceFiles() {
 
     files.forEach(f => {
       const li = document.createElement("li");
-      li.innerHTML = `<span>${f.is_dir ? "📁" : (f.path.endsWith('.mmd') ? '📊' : '📄')}</span> <span>${f.path}</span>`;
+      li.innerHTML = `<span>${f.is_dir ? "📁" : (f.path.endsWith('.mmd') ? '📊' : '📄')}</span> <span>${escapeHtml(f.path)}</span>`;
       if (!f.is_dir) {
         li.addEventListener("click", () => openWorkspaceFile(f.path));
       }
@@ -1103,6 +1134,7 @@ function setupEventListeners() {
   setupHistory();
   setupReasoningToggle();
   setupThoughtToggle();
+  setupConfirm();
 }
 
 // 10. Panel lateral (drawer): Archivos, Editor, Laptop, Evolución
@@ -1170,6 +1202,121 @@ function setupThoughtToggle() {
     content.style.display = visible ? "none" : "block";
     btn.innerText = visible ? "Ver pasos" : "Ocultar";
   });
+}
+
+// 13. Fase 14: confirmación humana ("EDITH quiere ejecutar: … ¿Autorizas?")
+// El agente espera en el servidor hasta que se responde aquí (o se rechaza solo al caducar).
+const preview = (s, n = 600) => { s = String(s ?? ""); return s.length > n ? s.slice(0, n) + "…" : s; };
+const CONFIRM_LABELS = {
+  run_system_command: ["EDITH quiere ejecutar en PowerShell:", (a) => a.command],
+  open_application: ["EDITH quiere abrir:", (a) => a.app_name],
+  web_search: ["EDITH quiere buscar en internet:", (a) => a.query],
+  read_web_page: ["EDITH quiere abrir la página:", (a) => a.url],
+  save_to_workspace: ["EDITH quiere guardar el archivo:", (a) => `${a.filename || ""}\n\n${preview(a.content)}`],
+  save_diagram: ["EDITH quiere guardar el diagrama:", (a) => `${a.title || ""}\n\n${preview(a.code)}`],
+  obsidian_create_note: ["EDITH quiere crear la nota de Obsidian:", (a) => `${a.title || ""}\n\n${preview(a.content)}`],
+  obsidian_append_note: ["EDITH quiere añadir a la nota de Obsidian:", (a) => `${a.title || ""}\n\n${preview(a.content)}`],
+  create_obsidian_note: ["EDITH quiere crear la nota de Obsidian:", (a) => `${a.filename || ""}\n\n${preview(a.content)}`],
+  append_to_obsidian_note: ["EDITH quiere añadir a la nota de Obsidian:", (a) => `${a.filename || ""}\n\n${preview(a.content)}`],
+  write_clipboard: ["EDITH quiere copiar en tu portapapeles:", (a) => preview(a.text)],
+  read_clipboard: ["EDITH quiere leer tu portapapeles.", () => ""],
+  capture_screen: ["EDITH quiere capturar tu pantalla.", () => ""],
+  analyze_screen: ["EDITH quiere ver tu pantalla:", (a) => a.query || ""],
+  create_reminder: ["EDITH quiere crear un recordatorio:", (a) => `${a.text || ""} — ${a.when || ""}${a.critical ? " (crítico: puede llamarte)" : ""}`],
+  cancel_reminder: ["EDITH quiere cancelar el recordatorio:", (a) => a.reminder_id],
+  control_system_volume: ["EDITH quiere cambiar el volumen:", (a) => a.action],
+};
+const confirmQueue = [];
+let confirmCurrent = null;
+let confirmTimerId = null;
+
+function handleConfirmRequest(data) {
+  confirmQueue.push(data);
+  if (!confirmCurrent) showNextConfirm();
+}
+
+function showNextConfirm() {
+  clearInterval(confirmTimerId);
+  confirmCurrent = confirmQueue.shift() || null;
+  const backdrop = document.getElementById("confirmBackdrop");
+  if (!confirmCurrent) {
+    backdrop.hidden = true;
+    return;
+  }
+  const args = confirmCurrent.args || {};
+  const [title, detail] = CONFIRM_LABELS[confirmCurrent.tool]
+    || [`EDITH quiere usar «${confirmCurrent.tool}»:`, (a) => JSON.stringify(a, null, 2)];
+  let text = "";
+  try { text = String(detail(args) ?? ""); } catch (e) { text = JSON.stringify(args); }
+  // Todo con textContent: el comando lo propone el modelo y se muestra tal cual, sin interpretarlo
+  document.getElementById("confirmTitle").textContent = title;
+  const cmd = document.getElementById("confirmCommand");
+  cmd.textContent = text;
+  cmd.hidden = !text.trim();
+  document.getElementById("confirmReason").textContent = confirmCurrent.reason || "";
+  backdrop.hidden = false;
+  document.getElementById("btnConfirmDeny").focus(); // un Enter por accidente rechaza, no autoriza
+
+  let left = confirmCurrent.timeout || 120;
+  const timer = document.getElementById("confirmTimer");
+  const tick = () => { timer.textContent = `Si no respondes, se rechaza sola en ${Math.max(left, 0)} s.`; };
+  tick();
+  confirmTimerId = setInterval(() => { left -= 1; tick(); if (left <= 0) answerConfirm(false); }, 1000);
+  document.getElementById("thoughtIndicator").innerText = "Esperando tu autorización...";
+  playActivationPing();
+}
+
+function answerConfirm(approved) {
+  if (!confirmCurrent) return;
+  const current = confirmCurrent;
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ action: "confirm", id: current.id, approved }));
+  }
+  appendConfirmBanner(current, approved);
+  showNextConfirm();
+}
+
+function expireConfirmation(id) {
+  const i = confirmQueue.findIndex(c => c.id === id);
+  if (i >= 0) confirmQueue.splice(i, 1);
+  if (confirmCurrent && confirmCurrent.id === id) {
+    appendConfirmBanner(confirmCurrent, false, "sin respuesta");
+    showNextConfirm();
+  }
+}
+
+function clearConfirmations() {
+  confirmQueue.length = 0;
+  confirmCurrent = null;
+  clearInterval(confirmTimerId);
+  const backdrop = document.getElementById("confirmBackdrop");
+  if (backdrop) backdrop.hidden = true;
+}
+
+function appendConfirmBanner(req, approved, note = "") {
+  const container = document.getElementById("chatMessages");
+  const banner = document.createElement("div");
+  banner.className = "tool-banner";
+  banner.innerText = `${approved ? "✅ Autorizaste" : "⛔ Rechazado"}: ${req.tool}${note ? ` (${note})` : ""}`;
+  container.appendChild(banner);
+  container.scrollTop = container.scrollHeight;
+}
+
+function setupConfirm() {
+  document.getElementById("btnConfirmAllow").addEventListener("click", () => answerConfirm(true));
+  document.getElementById("btnConfirmDeny").addEventListener("click", () => answerConfirm(false));
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && confirmCurrent) answerConfirm(false);
+  });
+}
+
+function safeHttpUrl(url) {
+  try {
+    const u = new URL(String(url || ""), window.location.href);
+    return u.protocol === "http:" || u.protocol === "https:" ? u.href : null;
+  } catch (e) {
+    return null;
+  }
 }
 
 function escapeHtml(text) {

@@ -488,6 +488,8 @@ select, textarea, input { font-family: var(--font-main); color: inherit; }
 .message.assistant-msg .msg-body {
   color: var(--text);
   line-height: 1.6;
+  /* Fase 14: lo que escribe el modelo no puede ponerse por encima del resto de la interfaz */
+  isolation: isolate;
 }
 
 .msg-body p { margin: 0 0 10px; }
@@ -901,3 +903,23 @@ select, textarea, input { font-family: var(--font-main); color: inherit; }
   .message { max-width: 100%; }
   .drawer { width: 100%; max-width: 100%; }
 }
+
+/* Fase 14: confirmación humana antes de ejecutar acciones ("¿Autorizas?") */
+.confirm-backdrop { position: fixed; inset: 0; z-index: 2147483647; display: grid; place-items: center;
+  background: rgba(5, 5, 9, 0.72); backdrop-filter: blur(3px); padding: 16px; }
+.confirm-backdrop[hidden] { display: none; }
+.confirm-modal { width: min(520px, 100%); background: var(--bg-elevated); border: 1px solid var(--border);
+  border-top: 3px solid #f59e0b; border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); padding: 18px 20px; }
+.confirm-title { font-weight: 700; font-size: 15px; margin-bottom: 10px; }
+.confirm-command { font-family: var(--font-code); font-size: 13px; background: var(--bg); color: var(--text);
+  border: 1px solid var(--border-soft); border-radius: var(--radius-sm); padding: 10px 12px; max-height: 220px;
+  overflow: auto; white-space: pre-wrap; word-break: break-word; margin: 0 0 10px; }
+.confirm-reason { font-size: 12.5px; color: var(--text-secondary); margin-bottom: 8px; }
+.confirm-question { font-size: 14px; font-weight: 600; margin-bottom: 12px; }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.confirm-actions button { border-radius: var(--radius-sm); padding: 8px 16px; font-size: 13px; font-weight: 600;
+  cursor: pointer; font-family: inherit; border: 1px solid var(--border); }
+.confirm-actions .btn-deny { background: var(--bg-hover); color: var(--text); }
+.confirm-actions .btn-allow { background: var(--danger); border-color: var(--danger); color: #fff; }
+.confirm-actions button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.confirm-timer { font-size: 11.5px; color: var(--text-muted); margin-top: 10px; text-align: right; }

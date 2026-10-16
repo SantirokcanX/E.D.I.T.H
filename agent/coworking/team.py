@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import List, Dict, Any, Optional, Callable
 from ..providers.base import BaseLLMProvider
 from ..tools import web_search, read_web_page, save_to_workspace
+from ..core.safety import mark_untrusted
 
 
 @dataclass
@@ -91,7 +92,9 @@ class CoworkingTeam:
             "Eres Scout. Resume la evidencia fáctica y datos concretos descubiertos en los resultados de búsqueda web. "
             "Sé objetivo, preciso y cita los datos clave."
         )
-        scout_report = self._call_llm_step(scout_summary_prompt, f"Evidencia encontrada:\n{evidence_text}")
+        # Fase 14: los resultados de la web van marcados como dato no confiable
+        scout_report = self._call_llm_step(scout_summary_prompt,
+                                           f"Evidencia encontrada:\n{mark_untrusted('web_search', evidence_text)}")
         emit("Scout", "Investigador Web", scout_report, "search")
 
         # -------------------------------------------------------------

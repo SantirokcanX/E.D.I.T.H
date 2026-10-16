@@ -132,7 +132,11 @@ class DesktopApp:
                 break
             time.sleep(0.2)
         if self.server and self.server.started:
-            self.window.load_url(f"http://127.0.0.1:{self.port}/")
+            # Fase 14: la ventana entra con el enlace de acceso, así no depende de EDITH_LOCAL_AUTOLOGIN.
+            # El servidor cambia el token por una cookie HttpOnly y redirige a "/" sin él en la URL.
+            from urllib.parse import quote
+            from agent.channels.security import get_api_token
+            self.window.load_url(f"http://127.0.0.1:{self.port}/?token={quote(get_api_token(), safe='')}")
         else:
             log.error("El servidor no arrancó; revisa %s", LOGS_DIR)
             self.window.load_html(LOADING_HTML.replace("Iniciando…", f"No pude iniciar. Revisa los registros en {LOGS_DIR}"))
