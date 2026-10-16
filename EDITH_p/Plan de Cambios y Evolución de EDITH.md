@@ -10,17 +10,17 @@ tags:
   - laptop-control
   - obsidian-sync
 created: 2026-10-15
-updated: 2026-10-15
-version: 0.0.5
+updated: 2026-10-16
+version: 0.0.8
 status: en-desarrollo
 ---
 
 # 👓 Plan Maestro y Hoja de Ruta: E.D.I.T.H.
 
 > [!info] Estado del Sistema
-> **E.D.I.T.H.** (Enhanced Dialectical Intelligence & Tactical Heuristics) está en la versión **0.0.5**: ya habla por **WhatsApp (texto y notas de voz)**, contesta y hace **llamadas telefónicas** (Twilio) y tiene **iniciativa propia** (recordatorios, alarmas que escalan a llamada, salud de la laptop, tareas de Obsidian y resumen matutino). Todo sobre su motor dual Qwen3 (100 % GPU, ~1 s), LaTeX, visión de pantalla y Obsidian.
+> **E.D.I.T.H.** (Enhanced Dialectical Intelligence & Tactical Heuristics) está en la versión **0.0.8**: ya habla por **WhatsApp (texto y notas de voz)**, contesta y hace **llamadas telefónicas** (Twilio) y tiene **iniciativa propia** (recordatorios, alarmas que escalan a llamada, salud de la laptop, tareas de Obsidian y resumen matutino). Todo sobre su motor dual Qwen3 (100 % GPU, ~1 s), LaTeX, visión de pantalla y Obsidian. Desde la **v0.0.6** es una app de escritorio y la **v0.0.7** protege la interfaz y la API con token y pide tu permiso antes de ejecutar comandos. La **v0.0.8** se configura sola la primera vez (asistente que mira tu GPU y descarga los modelos) y todo se cambia en ⚙️ Ajustes, sin editar `.env`.
 >
-> Pendiente inmediato: **Fase 8** (servidor 24/7 + URL pública), que es lo que permite que Twilio llegue a EDITH y que WhatsApp funcione con la laptop cerrada.
+> Pendiente inmediato: **Fase 8** (servidor 24/7 + URL pública), que es lo que permite que Twilio llegue a EDITH y que WhatsApp funcione con la laptop cerrada. Su requisito de seguridad (Fase 14) ya está listo en v0.0.7.
 >
 > Documentos clave:
 > - [[Registro de Cambios de EDITH]]: detalle técnico de cada versión.
@@ -128,8 +128,8 @@ timeline
     Fase 11 : Autonomía Proactiva Heartbeat Daemon (Completado)
     Fase 12 : Navegación Web Interactiva Playwright (Planificado)
     Fase 13 : Ojos al Mundo Real Webcam Vision e IoT (Planificado)
-    Fase 14 : Endurecimiento de Seguridad (En marcha)
-    Fase 15 : EDITH Setup - App de Escritorio Instalable (En marcha, 15.1 lista)
+    Fase 14 : Endurecimiento de Seguridad (Núcleo completado, v0.0.7)
+    Fase 15 : EDITH Setup - App de Escritorio Instalable (En marcha, 15.1 y 15.2 listas)
 ```
 
 ### ✅ Fase 2: Integración Profunda con Obsidian
@@ -211,7 +211,7 @@ timeline
 - [ ] **Clientes Ligeros**:
   - Tu laptop ejecuta la interfaz gráfica conectada por red a la PC; uso de CPU/GPU de la laptop: ~0 %.
 - [ ] **URL pública HTTPS para Twilio** (`PUBLIC_BASE_URL`): Tailscale Funnel o Cloudflare Tunnel hacia `/api/voice/*` y `/ws/voice`. Es lo único que falta para activar las llamadas de la Fase 10.
-- [ ] Antes de exponer nada a la red: **autenticación de la interfaz y la API** (ver Fase 14).
+- [x] Antes de exponer nada a la red: **autenticación de la interfaz y la API** (Fase 14, v0.0.7). Al abrir EDITH en red: añade el nombre o la IP de Tailscale a `EDITH_ALLOWED_HOSTS` y entra desde cada dispositivo con el enlace que muestra `python main.py --access-link`.
 
 ### ✅ Fase 9: WhatsApp Táctico (Mensajes, Notas de Voz y Alertas) — v0.0.5
 > [!tip] Objetivo
@@ -258,18 +258,25 @@ timeline
 - [ ] Integración con Home Assistant: control de luces y enchufes inteligentes.
 
 ### 🛡️ Fase 14: Endurecimiento de Seguridad
-> [!warning] Requisito antes de la Fase 8
-> Hoy la interfaz y la API confían en cualquier proceso de la laptop porque escuchan solo en `127.0.0.1`. Al mudar EDITH a un servidor en red, eso deja de bastar. Detalle: [[Auditoria de Seguridad y Protecciones de EDITH]].
+> [!success] Requisito de la Fase 8: listo (v0.0.7)
+> La interfaz, la API y el chat exigen un token (en la laptop entra sola; desde otro dispositivo, con el enlace de `python main.py --access-link`). PowerShell y abrir apps piden tu permiso en pantalla. Detalle: [[Auditoria de Seguridad y Protecciones de EDITH]] y [[Registro de Cambios de EDITH]].
 
 - [x] Lista blanca de números para WhatsApp y teléfono (v0.0.5).
 - [x] Sin PowerShell, apps, pantalla ni portapapeles desde canales remotos (v0.0.5).
 - [x] Firma de Twilio, clave del bridge y tokens de llamada de un solo uso (v0.0.5).
 - [x] Corregido el escape del workspace por prefijo de ruta (v0.0.5).
-- [ ] Token de acceso para la interfaz, la API y el WebSocket del chat, y validación de `Origin`/`Host`.
-- [ ] Confirmación humana en la interfaz antes de ejecutar PowerShell o abrir apps.
-- [ ] Marcar el contenido de webs y archivos como "dato no confiable" para que no dé órdenes a EDITH.
-- [ ] Sanitizar el HTML que genera el modelo antes de mostrarlo (DOMPurify).
-- [ ] Sacar `data/sessions/` del repositorio de git (contiene tus conversaciones).
+- [x] Token de acceso para la interfaz, la API y el WebSocket del chat, y validación de `Origin`/`Host` (v0.0.7).
+- [x] Confirmación humana en la interfaz antes de ejecutar PowerShell o abrir apps; `open_application` sin `shell=True` (v0.0.7).
+- [x] Marcar el contenido de webs y archivos como "dato no confiable" para que no dé órdenes a EDITH; tras leerlo, las acciones sensibles piden confirmación (v0.0.7).
+- [x] Sanitizar el HTML que genera el modelo antes de mostrarlo (DOMPurify 3.4.16 con SRI; imágenes externas bloqueadas) (v0.0.7).
+- [x] Sacar `data/sessions/` del repositorio de git (contiene tus conversaciones) (v0.0.7).
+- [ ] Content-Security-Policy completa (quitar los `onclick` en línea de la interfaz).
+- [ ] Fijar la versión de `marked`, `mermaid` y `chart.js` en el CDN.
+- [ ] Confirmación por WhatsApp para comandos pedidos desde remoto.
+- [ ] Límite de peticiones por minuto y cifrado de secretos con DPAPI.
+- [ ] Sacar también `data/memory/` y `data/audio/` del repositorio.
+- [x] Sacar de git la configuración de los plugins de Obsidian (`.obsidian/plugins/*/data.json`) (v0.0.8).
+- [ ] **Regenerar la API key y los certificados del plugin Local REST API**: se publicaron en GitHub con el commit `7446bb0`.
 
 ### 📦 Fase 15: EDITH Setup — Aplicación de Escritorio Instalable
 > [!tip] Objetivo
@@ -289,13 +296,18 @@ timeline
 - [x] Notificaciones con nombre y logo de EDITH.
 - [x] Atajo global `Win + Shift + E`.
 - [x] Pantalla "Iniciando…" mientras arranca, y WebView2 recuerda el permiso del micrófono.
-- [ ] Ajustes en `%LOCALAPPDATA%\EDITH` (hoy siguen en el `.env` del proyecto): pasa a la 15.2.
+- [x] Ajustes desde la app (15.2, v0.0.8): se guardan en el `.env` activo; en la app instalada será `%LOCALAPPDATA%\EDITH\.env`.
 
-**15.2 · Asistente de primer arranque y Ajustes**
-- [ ] Diagnóstico de GPU/RAM/disco con recomendación de modelos según la VRAM.
-- [ ] Descarga de modelos con barra de progreso y reanudación.
-- [ ] Elegir bóveda de Obsidian, voz, números autorizados, WhatsApp (QR) y Twilio (opcional).
-- [ ] Panel **Ajustes** en la app; el `.env` queda solo para desarrollo.
+> [!success] 15.2 lista (v0.0.8)
+> La primera vez, un asistente de 7 pasos deja EDITH configurada: mira tu GPU y recomienda los modelos, los descarga con progreso, elige la bóveda, la voz, WhatsApp y la iniciativa propia. Después todo se cambia en **⚙️ Ajustes** y se aplica al momento. Detalle: [[Registro de Cambios de EDITH#v0.0.8 — 16/10/2026 · Asistente de primer arranque y Ajustes (Fase 15.2)]].
+
+**✅ 15.2 · Asistente de primer arranque y Ajustes — v0.0.8**
+- [x] Diagnóstico de GPU/RAM/disco con recomendación de modelos según la VRAM.
+- [x] Descarga de modelos con barra de progreso, pausa y reanudación.
+- [x] Elegir bóveda de Obsidian (selector de carpetas nativo), voz con muestras, números autorizados, WhatsApp (QR) y Twilio (opcional).
+- [x] Panel **⚙️ Ajustes** en la app y en el icono junto al reloj; los cambios se aplican sin reiniciar. El `.env` queda solo para desarrollo.
+- [x] «Iniciar EDITH con Windows» (arranca oculta en la bandeja) y validación con mensajes claros.
+- [x] Pruebas en `tests/test_fase_15_2.py` (65 casos), junto a las de la Fase 14.
 
 **15.3 · Empaquetado**
 - [ ] PyInstaller en modo carpeta → `EDITH.exe` (+ `_internal/`).
@@ -305,7 +317,7 @@ timeline
 **15.4 · Instalador `EDITH-Setup.exe` (Inno Setup)**
 - [ ] Instalación por usuario, sin permisos de administrador.
 - [ ] Detecta Ollama y, si falta, lo instala con el instalador oficial.
-- [ ] Accesos directos en Escritorio y menú Inicio; opción "Iniciar con Windows".
+- [ ] Accesos directos en Escritorio y menú Inicio; opción "Iniciar con Windows" (ya existe en Ajustes desde la v0.0.8).
 - [ ] Componente opcional "WhatsApp".
 - [ ] Desinstalador que pregunta si conservar conversaciones y ajustes.
 
@@ -316,7 +328,7 @@ timeline
 - [ ] Prueba completa en una cuenta de Windows nueva o máquina virtual.
 
 > [!warning] Dependencias
-> Antes de construir el instalador: sacar `data/sessions/` de git (Fase 14). Para el modo cliente: Fases 8 y 14. Tamaño estimado del instalador: 250–450 MB; los modelos (~5 GB) se descargan aparte.
+> Antes de construir el instalador: sacar `data/sessions/` de git (Fase 14, hecho en v0.0.7). Para el modo cliente: Fases 8 y 14. Tamaño estimado del instalador: 250–450 MB; los modelos (~5 GB) se descargan aparte.
 
 ---
 
@@ -338,4 +350,4 @@ timeline
 - `01 - Diario/`: conversaciones archivadas desde EDITH.
 
 ---
-*Actualizado el 15/10/2026 - versión 0.0.3.*
+*Actualizado el 16/10/2026 - versión 0.0.8.*

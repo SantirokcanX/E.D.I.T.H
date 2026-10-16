@@ -13,6 +13,152 @@ Bitácora técnica de cada versión. Plan general: [[Plan de Cambios y Evolució
 
 ---
 
+## v0.0.8 — 16/10/2026 · Asistente de primer arranque y Ajustes (Fase 15.2)
+Commits `8cea1f8` (asistente y Ajustes) y `3466373` (pruebas), en `main` encima de la v0.0.7. Segunda entrega de la Fase 15: EDITH se configura sola la primera vez y todo se cambia desde la app, sin editar `.env`. Diseño: [[Diseño de EDITH Setup (Aplicación de Escritorio)]].
+
+> [!note] Numeración
+> Se desarrolló como «0.0.7», pero ese número lo tomó la Fase 14 (seguridad), así que sale como **v0.0.8**.
+
+### 🧙 Asistente de primer arranque (7 pasos)
+Aparece solo la primera vez que se abre EDITH (en la app o en el navegador). **«Configurar más tarde»** lo cierra para siempre: todo queda en ⚙️ Ajustes.
+
+| Paso | Qué pide | Detalle |
+|---|---|---|
+| 1 · Bienvenida | Tu nombre | Va a la memoria a largo plazo: EDITH te llama por tu nombre en todas las conversaciones |
+| 2 · Tu equipo y mis modelos | Modelo rápido y profundo | Diagnóstico de procesador, RAM, GPU, disco de los modelos y Ollama → recomendación según la VRAM. Si faltan modelos: **descarga con barra de progreso, pausa y reanudación** |
+| 3 · Tu bóveda de Obsidian | Carpeta | Botón **«Elegir…»** (selector de carpetas de Windows, solo en la app), **«Comprobar»** (existe, cuántas notas, se puede escribir) y crear las carpetas `00–04` si está vacía |
+| 4 · Elige mi voz | Elvira, Dalia, Ximena, Salomé | **▶ Escuchar** cada una; si no hay internet avisa de que sonará la voz de Windows |
+| 5 · WhatsApp y teléfono | Números autorizados, WhatsApp, QR | Opcional. Twilio y la URL pública van en «Avanzado» |
+| 6 · Iniciativa propia | Heartbeat, resumen matutino, horas de silencio, avisos | También **«Iniciar EDITH con Windows»** (solo en la app) |
+| 7 · ¡Lista! | — | Resumen de lo elegido |
+
+**Recomendación de modelos** (`agent/setup/hardware.py`):
+
+| GPU dedicada | Rápido | Profundo |
+|---|---|---|
+| 24 GB o más | `qwen3:14b` | `qwen3:32b` |
+| 16 GB | `qwen3:8b` | `qwen3:14b` |
+| 10–12 GB | `qwen3:8b` | `qwen3:8b` (híbrido: el mismo para los dos modos) |
+| 4–8 GB (esta laptop) | `qwen3:4b-instruct` | `qwen3:4b` |
+| Sin GPU dedicada | `qwen3:1.7b` | `qwen3:4b` (lento) |
+
+Con menos de 8 GB de RAM baja a los modelos pequeños. Antes de descargar comprueba que haya espacio (descarga + 2 GB de margen).
+
+### ⚙️ Panel de Ajustes
+- Botón **⚙️ Ajustes** en la barra lateral y en el menú del icono junto al reloj. Los mismos campos que el asistente, en 7 pestañas: *Tú, Modelos de IA, Obsidian, Voz, WhatsApp y teléfono, Autonomía, Avanzado*.
+- **Se aplica al momento, sin reiniciar**: modelos (y los precarga en la GPU), voz, precisión de Whisper, WhatsApp (reinicia el bridge) y Heartbeat (lo enciende o apaga). Solo el puerto y el atajo global piden reiniciar, y lo indican.
+- Se guarda en el `.env` activo: el del proyecto mientras EDITH corre desde el código; `%LOCALAPPDATA%\EDITH\.env` cuando no hay proyecto (la app instalada de la 15.3). Se conservan los comentarios y las demás claves.
+- El Auth Token de Twilio se muestra como `••••••••`; si no se toca, se conserva.
+- **Validación con mensajes claros**: rutas completas, números en formato internacional (8–15 dígitos; se aceptan espacios, guiones y paréntesis y se guardan normalizados), URL pública solo `https://`, horas `HH:MM`, rangos numéricos y puerto `auto` o 1024–65535.
+- **Iniciar con Windows**: crea `HKCU\…\Run\EDITH` → `EDITH.exe --tray` (sin permisos de administrador). Con `--tray` EDITH arranca oculta en la bandeja.
+
+### 🔒 Seguridad
+- Las rutas que cambian ajustes, descargan modelos o crean carpetas exigen el token de la v0.0.7 y además solo aceptan peticiones de esta computadora (`Host` 127.0.0.1/localhost) y de la propia EDITH (`Origin` igual): otra web abierta en el navegador no puede cambiarlos y, **desde otro dispositivo, aunque tenga el token, Ajustes responde 403** (el chat sí funciona).
+- Cada ajuste es una sola línea: los saltos de línea se rechazan, así nadie puede colar otra clave en el `.env` (p. ej. `REMOTE_ALLOW_SYSTEM_TOOLS=true`). Las claves que no son de Ajustes se ignoran.
+- «Iniciar con Windows» solo se acepta desde la app de escritorio.
+
+### 🔐 Limpieza del repositorio
+- El commit `7446bb0` («Gran actualizacion 0.0.4») subió la bóveda a git, incluido `EDITH_p/.obsidian/plugins/obsidian-local-rest-api/data.json` con la **API key y las claves privadas de los certificados** del plugin Local REST API, y el repositorio de GitHub es público.
+- Ahora ese archivo sale de git y `**/.obsidian/plugins/*/data.json` va al `.gitignore` (el archivo sigue en tu bóveda y el plugin funciona igual). Al fusionar la Fase 14 también salen de git las dos sesiones de `data/sessions/` (los archivos se conservan).
+
+> [!danger] Pendiente tuyo
+> Lo que ya se publicó sigue en el historial de GitHub: **regenera la API key y los certificados** en Obsidian → Ajustes → Local REST API, y actualiza la clave donde la uses (por ejemplo, la conexión MCP de Obsidian). Para borrarlo también del historial habría que reescribirlo (force push) o hacer privado el repositorio.
+
+### 🐛 Corregido de paso
+- **«Oye EDITH» ya no reintenta sin parar** si el micrófono está bloqueado o no hay servicio de voz (en la app de escritorio WebView2 puede no tenerlo): se pausa y el botón dice *«sin micrófono»* o *«sin servicio de voz»*; al pulsarlo vuelve a intentarlo. Los reintentos normales esperan cada vez más. (Era un pendiente de la v0.0.7.)
+- El Heartbeat no podía volver a encenderse después de apagarlo.
+- La app de escritorio guardaba el puerto que le tocó como si fuera tu ajuste: ahora usa `EDITH_RUNTIME_PORT` y tu `EDITH_PORT` queda intacto.
+
+### 🔧 Piezas técnicas
+| Archivo | Qué hace |
+|---|---|
+| `agent/setup/hardware.py` | GPUs (`nvidia-smi` + registro de Windows, separa la integrada), CPU, RAM, disco, Ollama y recomendación |
+| `agent/setup/models.py` | Descargas con `/api/pull` de Ollama en segundo plano: progreso, cancelar y reanudar |
+| `agent/setup/settings.py` | Esquema único de ajustes (asistente y panel), validación y guardado en `.env`; `setup.json` en `%LOCALAPPDATA%\EDITH` |
+| `ide/setup_api.py` | `/api/setup/*` y `/api/settings`; aplica los cambios en vivo |
+| `ide/static/setup.js` | Asistente y panel de Ajustes |
+| `desktop/desktop_app.py` | Selector de carpetas nativo, `--tray`, «Ajustes» en el menú de la bandeja |
+
+### 🧪 Pruebas
+- **`python tests/test_fase_15_2.py`: 65/65** (Ollama simulado y `.env` temporal: nunca toca tus datos ni descarga nada). Recomendación por VRAM y GPU integrada vs dedicada; diagnóstico; asistente pendiente/completado; 7 secciones; token de Twilio enmascarado; números, URL y horas normalizados; comentarios del `.env` conservados; 8 valores inválidos rechazados con su mensaje (incluido el salto de línea); claves desconocidas ignoradas; nombre a la memoria; modelos y voz aplicados en vivo; descarga completa, una a la vez, pausa y error de Ollama; bóveda (crear 00-04, reconocer `.obsidian`, contar notas); otra web, otro puerto, sin token, `Host` ajeno y otro dispositivo → rechazados.
+- **Tras fusionar con la v0.0.7**: `tests/test_seguridad.py` **78/78** y `tests/test_fases_9_11.py` **55/55**.
+- **App de escritorio real con el token** (oculta con `--tray`, sin tocar la pantalla): 12/12. La ventana entra con su enlace (WebView2 guarda la cookie `HttpOnly`), sin token → 401, «Iniciar con Windows» crea y borra la entrada, otro origen → 403, salida ordenada y sin errores en el registro.
+- **Navegador**: el asistente aparece solo en el primer arranque; diagnóstico real de esta laptop (Ryzen 5 8645HS, RTX 4050 de 6 GB —la Radeon integrada se descarta—, 30.3 GB libres, Ollama 0.34.4) → recomienda `qwen3:4b-instruct` + `qwen3:4b`, que ya están instalados; descarga con progreso, pausa y reanudación (siguió desde el 19 %); errores de validación (ruta relativa, URL `http://`, número inválido); números normalizados; token de Twilio enmascarado; resumen final y Ajustes con sus 7 pestañas.
+- **App de escritorio**: modo escritorio detectado; «Iniciar con Windows» crea y borra la entrada de inicio con `--tray`; otro origen recibe 403; `--tray` arranca oculta y «Abrir EDITH» la muestra; **«Elegir…» abre el selector «Seleccionar carpeta» de Windows** en la bóveda actual; salida ordenada.
+- **«Oye EDITH»**: micrófono bloqueado → se pausa sin reintentar; 3 fallos de red seguidos → se pausa; «no-speech» sigue escuchando.
+
+### 📌 Pendiente
+- Regenerar la API key y los certificados del plugin Local REST API (ver arriba).
+- 15.3 · Empaquetado con PyInstaller: es lo que permitirá usar `%LOCALAPPDATA%\EDITH\.env` sin la carpeta del proyecto.
+- El registro de modelos de Ollama fue muy lento en la prueba (~150 KB/s): la descarga se puede pausar y seguir otro día.
+
+---
+
+## v0.0.7 — 16/10/2026 · Endurecimiento de seguridad (Fase 14)
+Commit `eded747` (rama `claude/inspiring-rhodes-a46533`), **fusionado en `main` el 16/10/2026** con `b3afff3`. Es el requisito para mover EDITH al servidor 24/7 (Fase 8). Riesgos y estado: [[Auditoria de Seguridad y Protecciones de EDITH]].
+
+> [!note] Numeración
+> Se pensó como v0.0.6, pero ese número ya lo usa la app de escritorio (Fase 15.1), así que sale como **v0.0.7**.
+
+### 🔑 Token de acceso para la interfaz, la API y el chat
+| Pieza | Archivo | Qué hace |
+|---|---|---|
+| Token | `agent/channels/security.py` | `EDITH_API_TOKEN` o `%LOCALAPPDATA%\EDITH\data\channels\api_token` (se genera solo, fuera de git) |
+| Guardián | `ide/auth.py` | Middleware para HTTP y WebSocket: token, `Host` y `Origin` |
+| Enlace | `python main.py --access-link` | Muestra `http://…/?token=…` para abrir EDITH desde otro dispositivo |
+
+- **En la laptop no cambia nada**: al abrir `http://localhost:8000` o la app de escritorio, la interfaz recibe sola una cookie `HttpOnly` + `SameSite=Lax` (JavaScript no puede leerla). Si la petición llega por un túnel o proxy (`X-Forwarded-For`…) no entra sola. Se desactiva con `EDITH_LOCAL_AUTOLOGIN=false`.
+- **Desde otro dispositivo**: se abre una vez el enlace con token; EDITH guarda la cookie y redirige a `/` **quitando el token de la URL**. Sin token se ve la página «🔒 EDITH está protegida».
+- **App de escritorio**: la ventana entra con ese mismo enlace al arrancar, así no depende del auto-login.
+- **Scripts**: cabecera `Authorization: Bearer <token>`.
+- **Host permitido** en todas las peticiones (`localhost`, `127.0.0.1`, el host de `PUBLIC_BASE_URL` y `EDITH_ALLOWED_HOSTS`): bloquea el *DNS rebinding*. Para Tailscale o la red local hay que añadir el nombre o la IP a `EDITH_ALLOWED_HOSTS`.
+- **Origin del mismo sitio** en `/ws/chat` y en todo `POST`/`PATCH`/`DELETE`: otra web (o una app en `localhost:3000`) no puede mandar órdenes con tu cookie.
+- `X-Frame-Options: DENY`: nadie puede incrustar EDITH en un iframe para engañarte con el botón «Autorizar».
+- **Sin cambios** en las rutas con autenticación propia: bridge de WhatsApp (`X-Edith-Bridge-Secret`), webhooks de Twilio (firma) y `/ws/voice` (token de un solo uso). El QR de WhatsApp sí pide ahora el token (es una pantalla de la interfaz).
+
+### ✋ Confirmación humana antes de actuar
+- Antes de `run_system_command` (PowerShell) y `open_application`, la interfaz muestra **«EDITH quiere ejecutar: … ¿Autorizas?»** con el comando exacto. El foco empieza en **Rechazar** (un Enter por accidente no autoriza), `Esc` rechaza y, sin respuesta, se rechaza sola a los **120 s**.
+- El agente espera la respuesta por el WebSocket: el chat ahora lee mensajes mientras EDITH trabaja (cola de consultas + confirmaciones por pestaña; otra pestaña no puede autorizar lo que se pidió en esta).
+- En la terminal (`python main.py`) se pregunta con `¿Autorizas? [y/n]`.
+- Desde WhatsApp o el teléfono no hay a quién preguntar: esas acciones **se rechazan** (falla cerrado), aunque `REMOTE_ALLOW_SYSTEM_TOOLS=true`.
+- `open_application` ya **no usa `shell=True`**: abre con `os.startfile` (ShellExecute), así `"notepad & del archivo"` ya no ejecuta el borrado. Los botones del panel *Laptop* solo lanzan las apps conocidas.
+- PowerShell y los lanzadores `.cmd` (como el de VS Code) corren **sin ventana de consola** (`CREATE_NO_WINDOW`): la app de escritorio ya no tiene consola y antes parpadeaba una ventanita negra.
+
+### 🧪 Contenido externo = dato no confiable
+- La salida de `web_search`, `read_web_page`, archivos del workspace, notas de Obsidian, portapapeles y pantalla llega al modelo envuelta en `[DATO NO CONFIABLE · origen: …]` entre `<<<CONTENIDO_EXTERNO>>>` y `<<<FIN_CONTENIDO_EXTERNO>>>` (el texto no puede cerrar el bloque por su cuenta). El prompt de sistema explica que es solo información.
+- En un turno donde entró contenido externo, también piden confirmación: guardar archivos o diagramas, escribir en Obsidian, recordatorios, portapapeles, volumen y pantalla.
+- En un turno donde se leyeron datos privados (notas, archivos, portapapeles, pantalla), **consultar internet pide confirmación**: así una instrucción escondida no puede sacar tus notas en una URL. Investigar en la web (buscar + leer páginas) sigue sin preguntar.
+- El modo Equipo marca igual la evidencia web que lee Scout.
+
+### 🧼 HTML saneado con DOMPurify
+- `ide/static/render.js`: todo el HTML de cada respuesta pasa por **DOMPurify 3.4.16** (cdnjs, versión fija + SRI) antes de insertarse. Fuera: `<script>`, `onerror`/`onclick`, enlaces `javascript:`, `<style>`, formularios y botones falsos, `id`/`name` (nada puede hacerse pasar por el modal), CSS con `url()` o `position: fixed`.
+- **Imágenes externas bloqueadas**: `![x](https://…?d=datos)` se convierte en un enlace en vez de cargarse sola (era una vía para filtrar datos).
+- Los enlaces se abren en otra pestaña (`noopener noreferrer`).
+- Sin las librerías (sin internet) se muestra texto plano, nunca HTML sin sanear.
+- También escapados en `app.js`: las fuentes consultadas (títulos y URLs de la web), el código de los diagramas Mermaid (ahora `securityLevel: 'strict'`) y los nombres de archivo.
+
+### 🗂️ Historial fuera de git
+- `data/sessions/` en `.gitignore` y fuera del repositorio con `git rm --cached` (los archivos locales se conservan). Las sesiones reales ya viven en `%LOCALAPPDATA%\EDITH\data\sessions` (v0.0.6).
+
+### 🧪 Pruebas
+- Las pruebas pasan a vivir en el repositorio (`tests/`, con `EDITH_HOME` en una carpeta temporal: nunca tocan tus datos): `python tests/test_seguridad.py` y `python tests/test_fases_9_11.py`.
+- **78/78** de la Fase 14: sin token → 401; token incorrecto → 401; enlace con token → cookie y redirección sin token; en local entra sola, pero no tras un proxy; `Host` ajeno → 400; `Origin` ajeno, otro puerto local o sin `Origin` → 403; bridge y Twilio siguen entrando con su propia clave o firma; `/ws/chat` rechaza sin token u Origin ajeno; PowerShell espera confirmación sin ejecutarse; rechazado o caducado → no se ejecuta; autorizado → una sola vez; contenido marcado; herramientas sensibles tras contenido externo; `open_application` sin shell; PowerShell sin ventana; la app de escritorio entra con su enlace aunque el auto-login esté apagado; `data/sessions` fuera de git.
+- **55/55** de las Fases 9-11 siguen pasando (WhatsApp, notas de voz reales, Twilio con firmas, relay, Heartbeat), antes y después de fusionar `main`.
+- **Navegador** (EDITH real en el puerto 8010): DOMPurify 3.4.16 cargado con SRI, la cookie no es visible para JavaScript, 17/17 casos de HTML malicioso neutralizados (`onerror`, `javascript:`, `<script>`, `<style>`, overlay con `position:fixed`, `<svg onload>`, imagen externa, CSS `url()`, formulario falso) sin romper KaTeX (en línea, en bloque y `\sqrt` en SVG), los bloques de código ni las tablas. Con el modelo real, «Ejecuta en PowerShell el comando Get-Date» abrió el modal con `Get-Date`; al **Rechazar** no se ejecutó y EDITH lo explicó.
+
+> [!warning] Al fusionar en `main`
+> El commit saca `data/sessions/session_20260926_141522.json` de git. En el checkout principal ese archivo tiene cambios sin guardar: hay que copiar `data/sessions/` aparte antes de fusionar y restaurarla después, o git se niega a fusionar (o lo borra).
+
+### 📌 Pendiente (siguiente ronda)
+- Content-Security-Policy completa (requiere quitar los `onclick` en línea de `index.html`).
+- Fijar la versión de `marked`, `mermaid` y `chart.js` (hoy sin versión fija en el CDN).
+- Confirmación por WhatsApp («responde *sí* para ejecutar») para usar PowerShell desde remoto.
+- Límite de peticiones por minuto y cifrado de secretos con DPAPI (ver la auditoría).
+- `data/memory/long_term_profile.json` y `data/audio/` siguen en git y también son personales.
+- ~~«Oye EDITH» reintenta sin parar si el micrófono está bloqueado (llena la consola con `not-allowed`).~~ Resuelto en v0.0.8.
+
+---
+
 ## v0.0.6 — 16/10/2026 · EDITH como app de escritorio (Fase 15.1)
 Commit `ab67c32` (ya en `main`). Diseño: [[Diseño de EDITH Setup (Aplicación de Escritorio)]].
 

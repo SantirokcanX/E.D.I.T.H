@@ -15,3 +15,6 @@ data/sessions/
 
 # Lanzador compilado (se genera con desktop/launcher/build_launcher.bat o install_edith.bat)
 EDITH.exe
+
+# Configuración de plugins de Obsidian: puede contener claves (p. ej. Local REST API)
+**/.obsidian/plugins/*/data.json

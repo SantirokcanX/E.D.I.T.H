@@ -7,7 +7,7 @@ tags:
   - instalador
   - aplicacion-escritorio
 created: 2026-10-16
-status: en-marcha (15.1 lista)
+status: en-marcha (15.1 y 15.2 listas)
 fase: 15
 ---
 
@@ -22,6 +22,9 @@ fase: 15
 
 > [!success] Entrega 15.1 completada (v0.0.6, 16/10/2026)
 > App nativa sin instalador: `EDITH.exe`, bandeja, cerrar = ocultar, instancia única, puerto libre, `%LOCALAPPDATA%\EDITH`, atajo global y avisos con identidad propia. Detalle en [[Registro de Cambios de EDITH#v0.0.6 — 16/10/2026 · EDITH como app de escritorio (Fase 15.1)]].
+
+> [!success] Entrega 15.2 completada (v0.0.8, 16/10/2026)
+> Asistente de primer arranque y panel ⚙️ Ajustes. Detalle en [[Registro de Cambios de EDITH#v0.0.8 — 16/10/2026 · Asistente de primer arranque y Ajustes (Fase 15.2)]].
 
 ## 🔎 Punto de partida (antes de la 15.1, v0.0.5)
 
@@ -102,6 +105,13 @@ graph LR
 
 Todo lo elegido queda editable en un panel **Ajustes** dentro de la app.
 
+> [!note] Cómo quedó en la v0.0.8
+> - **7 pasos** en vez de 8: diagnóstico y modelos van juntos (si los modelos ya están, no descarga nada) y el último paso es un resumen; la primera conversación es la propia ventana de chat. Sin selector de idioma: EDITH habla español.
+> - La tabla de modelos tiene un escalón más: con **10–12 GB** usa `qwen3:8b` para los dos modos (es híbrido) y `qwen3:14b` como profundo solo desde 16 GB.
+> - «Iniciar con Windows» está en el paso de *Iniciativa propia* y en Ajustes; arranca oculta en la bandeja (`--tray`).
+> - «Configurar más tarde» cierra el asistente para siempre; todo queda en ⚙️ Ajustes (barra lateral y menú del icono junto al reloj).
+> - Los ajustes se aplican sin reiniciar, salvo el puerto y el atajo global.
+
 ---
 
 ## 🪟 Comportamiento de app nativa
@@ -155,9 +165,9 @@ Todo lo elegido queda editable en un panel **Ajustes** dentro de la app.
 
 ## ⚠️ Riesgos y dependencias
 
-- **Fase 14 (seguridad)** antes de distribuir a otras personas o usar el modo cliente: hoy la API confía en cualquier proceso local.
+- **Fase 14 (seguridad)** antes de distribuir a otras personas o usar el modo cliente: resuelta en la v0.0.7 (token de acceso, `Host`/`Origin` y confirmación antes de ejecutar comandos).
 - **Fase 8 (servidor)** solo para el modo cliente; el modo local no depende de ella.
-- `data/sessions/` debe salir de git antes de construir el instalador para no empaquetar conversaciones.
+- `data/sessions/` debe salir de git antes de construir el instalador para no empaquetar conversaciones (hecho en la v0.0.7).
 - Python 3.13 + PyInstaller: compatible desde PyInstaller 6.11; verificar `faster-whisper` (ctranslate2) y `pygame` empaquetados.
 
 ---
