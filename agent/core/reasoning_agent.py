@@ -66,12 +66,13 @@ class AgentRunResult:
     deep_thinking: bool = False
 
 
-# Señales de que una consulta merece razonamiento profundo (más lento pero más fiable)
+# Señales de que una consulta merece razonamiento profundo. Es deliberadamente conservadora:
+# pensar a fondo cuesta 10-40 s (y cambiar de modelo en una GPU de 6 GB otros ~6 s), así que
+# solo se activa donde un error de razonamiento es probable: matemáticas, lógica y depuración.
 _DEEP_PATTERNS = re.compile(
-    r"\b(demuestra|demostraci[oó]n|calcula|resuelve|ecuaci[oó]n|integral|deriva|derivada|l[ií]mite|"
-    r"matriz|probabilidad|estad[ií]stic|teorema|l[oó]gica|paradoja|acertijo|algoritmo|complejidad|"
-    r"optimiza|depura|debug|refactoriza|arquitectura|analiza a fondo|paso a paso|razona|compara|"
-    r"ventajas y desventajas|pros y contras|estrategia|planifica|dise[nñ]a)\b",
+    r"\b(demuestra|demostraci[oó]n|calcula|resuelve|ecuaci[oó]n|integral|derivada|deriva|l[ií]mite|"
+    r"matriz|probabilidad|teorema|paradoja|acertijo|complejidad algor[ií]tmica|"
+    r"depura|debug|por qu[eé] falla|analiza a fondo|paso a paso|razona|piensa bien)\b",
     re.IGNORECASE,
 )
 
@@ -79,7 +80,7 @@ _DEEP_PATTERNS = re.compile(
 def needs_deep_thinking(query: str) -> bool:
     """Heurística rápida (sin llamar al modelo) para el modo de razonamiento automático."""
     q = query.strip()
-    if len(q) > 400 or "```" in q:
+    if "```" in q and re.search(r"\b(error|falla|bug|no funciona|arregla|corrige)\b", q, re.IGNORECASE):
         return True
     if _DEEP_PATTERNS.search(q):
         return True
@@ -126,6 +127,11 @@ REGLA DE ORO: HONESTIDAD, AUTONOMÍA Y LEALTAD AL USUARIO:
 
 ESTILO:
 - En español natural, fluido, con calidez, complicidad y agudeza intelectual.
+
+FORMATO (la interfaz renderiza Markdown, LaTeX y código con resaltado):
+- Toda expresión matemática va en LaTeX: en línea con $...$ (p. ej. $x^2 + 1$) y las ecuaciones importantes o desarrollos en bloque con $$...$$ en su propia línea. Usa \\frac, \\sqrt, \\int, \\sum, \\cdot, y entornos como \\begin{aligned} para pasos encadenados. Nunca escribas fórmulas como texto plano (x^2/3) ni dentro de bloques de código.
+- El código va siempre en bloques con el lenguaje indicado (```python, ```javascript, ```bash...), completo y listo para copiar. Para nombres de archivos, funciones o comandos cortos usa `código en línea`.
+- Para comparar opciones, usa tablas Markdown.
 """
 
 

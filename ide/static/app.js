@@ -10,6 +10,7 @@ let isListeningForCommand = false;
 let activeSessionId = null;
 let streamingEl = null;   // burbuja donde se escribe la respuesta token a token
 let streamingText = "";
+let streamingRenderPending = false;
 let historySearchTimer = null;
 const REASONING_MODES = {
   auto: { label: "🧠 Auto", title: "Razonamiento automático: EDITH decide si pensar a fondo" },
@@ -188,7 +189,9 @@ function handleWsMessage(data) {
       // Cada paso del razonamiento empieza limpio (un paso con herramientas no es la respuesta final)
       resetStreamingBubble();
       document.getElementById("thoughtLine").style.display = "flex";
-      thoughtIndicator.innerText = `Razonando paso ${data.iteration}`;
+      thoughtIndicator.innerText = lastTurnDeep === false
+        ? `Respondiendo (paso ${data.iteration})`
+        : `Pensando a fondo (paso ${data.iteration})`;
       thoughtIndicator.classList.add("active");
       break;
 
@@ -260,8 +263,15 @@ function appendStreamingChunk(chunk) {
     streamingText = "";
   }
   streamingText += chunk;
-  streamingEl.querySelector(".msg-body").textContent = streamingText;
-  container.scrollTop = container.scrollHeight;
+  if (!streamingRenderPending) {
+    streamingRenderPending = true;
+    requestAnimationFrame(() => {
+      streamingRenderPending = false;
+      if (!streamingEl) return;
+      streamingEl.querySelector(".msg-body").innerHTML = EdithRender.toHtml(streamingText);
+      container.scrollTop = container.scrollHeight;
+    });
+  }
 }
 
 function resetStreamingBubble() {
@@ -304,7 +314,7 @@ function appendAssistantMessage(markdownContent, sources = [], deep = undefined)
     `;
   }
 
-  const parsedBody = marked.parse(markdownContent || "");
+  const parsedBody = EdithRender.toHtml(markdownContent || "");
   msgEl.innerHTML = `
     <div class="msg-header">
       <img class="avatar" src="logo.png" alt="EDITH">
@@ -320,8 +330,9 @@ function appendAssistantMessage(markdownContent, sources = [], deep = undefined)
   container.appendChild(msgEl);
   container.scrollTop = container.scrollHeight;
 
-  // Renderizar bloques Mermaid en el mensaje si existen
+  // Renderizar bloques Mermaid y mejorar bloques de código (colores, Copiar, Guardar)
   renderMermaidBlocksInElement(msgEl);
+  EdithRender.enhanceCodeBlocks(msgEl);
 }
 
 function appendToolCallBanner(tool, args) {
@@ -374,10 +385,11 @@ function handleTeamEvent(data) {
       <span class="name">${data.member} (${data.role})</span>
     </div>
     <div class="msg-body">
-      ${marked.parse(data.content || '')}
+      ${EdithRender.toHtml(data.content || '')}
     </div>
   `;
   container.appendChild(item);
+  EdithRender.enhanceCodeBlocks(item);
   container.scrollTop = container.scrollHeight;
 }
 
@@ -823,6 +835,7 @@ function setupEventListeners() {
 
     appendUserMessage(text);
     lastMlQuery = text;
+    lastTurnDeep = null;
     input.value = "";
     input.style.height = "auto";
 

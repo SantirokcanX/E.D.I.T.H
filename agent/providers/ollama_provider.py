@@ -73,11 +73,15 @@ def ensure_ollama_running(base_url: str = "http://localhost:11434", timeout: flo
 class OllamaProvider(BaseLLMProvider):
     """Proveedor para modelos locales a través de Ollama (ej. DeepSeek-R1, Llama 3)."""
 
-    def __init__(self, base_url: str = "http://localhost:11434", model: str = "qwen3:4b",
+    def __init__(self, base_url: str = "http://localhost:11434", model: str = "qwen3:4b-instruct",
                  keep_alive: Optional[str] = None, num_ctx: Optional[int] = None,
-                 think: Optional[bool] = None):
+                 think: Optional[bool] = None, deep_model: Optional[str] = None):
         self.base_url = base_url.rstrip("/")
         self.model = model
+        # Modelo que razona para los mensajes difíciles (p. ej. qwen3:4b "Thinking").
+        # Las variantes "Thinking" ignoran think=false y mezclan su razonamiento en la
+        # respuesta, por eso lo rápido va a `model` (instruct) y lo profundo a `deep_model`.
+        self.deep_model = deep_model if deep_model and deep_model != model else None
         self.keep_alive = keep_alive or "30m"
         self.num_ctx = num_ctx
         # Valor por defecto cuando el agente no pide explícitamente razonar o no
@@ -85,8 +89,8 @@ class OllamaProvider(BaseLLMProvider):
         # Cliente HTTP persistente: reutiliza la conexión TCP en cada paso del razonamiento
         self._client = httpx.Client(timeout=httpx.Timeout(180.0, connect=5.0))
         # Se desactivan solos si el modelo los rechaza (p. ej. un modelo sin soporte de tools)
-        self._tools_supported = True
-        self._think_supported = True
+        self._no_tools: set = set()   # modelos que rechazaron `tools`
+        self._no_think: set = set()   # modelos que rechazaron `think`
 
     def _options(self) -> Dict[str, Any]:
         options: Dict[str, Any] = {"temperature": 0.6}
@@ -94,19 +98,27 @@ class OllamaProvider(BaseLLMProvider):
             options["num_ctx"] = self.num_ctx
         return options
 
+    def _model_for(self, think: bool) -> str:
+        return self.deep_model if (think and self.deep_model) else self.model
+
     def warmup(self) -> bool:
-        """Carga el modelo en memoria por adelantado para que el primer mensaje responda rápido."""
+        """Carga los modelos en memoria por adelantado para que el primer mensaje responda rápido."""
         try:
             if "localhost" in self.base_url or "127.0.0.1" in self.base_url:
                 ensure_ollama_running(self.base_url, timeout=8.0)
-            # Mismas opciones que el chat: si num_ctx difiere, Ollama recarga el modelo (~10 s)
-            res = self._client.post(
-                f"{self.base_url}/api/generate",
-                json={"model": self.model, "prompt": "", "keep_alive": self.keep_alive,
-                      "options": self._options()},
-                timeout=120.0,
-            )
-            return res.status_code == 200
+            ok = True
+            # El de razonamiento primero y el rápido al final: así queda cargado el que más se usa
+            # (y el otro ya está en la caché de disco del sistema, lo que acelera el cambio).
+            for model in filter(None, [self.deep_model, self.model]):
+                # Mismas opciones que el chat: si num_ctx difiere, Ollama recarga el modelo (~10 s)
+                res = self._client.post(
+                    f"{self.base_url}/api/generate",
+                    json={"model": model, "prompt": "", "keep_alive": self.keep_alive,
+                          "options": self._options()},
+                    timeout=120.0,
+                )
+                ok = ok and res.status_code == 200
+            return ok
         except Exception:
             return False
 
@@ -125,10 +137,14 @@ class OllamaProvider(BaseLLMProvider):
                         return False, "Ollama está corriendo, pero no hay ningún modelo descargado. Ejecuta por ejemplo: `ollama run deepseek-r1:latest`"
                     
                     # Verificar si el modelo configurado o alguna variante está presente
-                    matched = any(self.model in m or m in self.model for m in models)
-                    if not matched:
+                    wanted = list(filter(None, [self.model, self.deep_model]))
+                    missing = [w for w in wanted if not any(w == m or f"{w}:latest" == m for m in models)]
+                    if missing:
                         available_list = ", ".join(models[:4])
-                        return True, f"Ollama activo. Nota: el modelo '{self.model}' no se encontró en la lista local ({available_list}). Se intentará ejecutar o puedes cambiarlo con /model."
+                        return True, (f"Ollama activo. Nota: no encontré {', '.join(missing)} en la lista local "
+                                      f"({available_list}). Descárgalo con `ollama pull {missing[0]}` o cámbialo con /model.")
+                    if self.deep_model:
+                        return True, f"Ollama activo: '{self.model}' (rápido) + '{self.deep_model}' (razonamiento)."
                     return True, f"Ollama activo con modelo '{self.model}'."
                 return False, f"Ollama respondió con código de estado HTTP {res.status_code}."
         except Exception:
@@ -157,11 +173,11 @@ class OllamaProvider(BaseLLMProvider):
                 body = response.read().decode("utf-8", errors="replace").lower()
                 ctx.__exit__(None, None, None)
                 if "tools" in payload and "tool" in body:
-                    self._tools_supported = False
+                    self._no_tools.add(payload["model"])
                     payload.pop("tools", None)
                     continue
                 if "think" in payload and "think" in body:
-                    self._think_supported = False
+                    self._no_think.add(payload["model"])
                     payload.pop("think", None)
                     continue
                 raise RuntimeError(f"Error de Ollama (400): {body}")
@@ -231,18 +247,19 @@ class OllamaProvider(BaseLLMProvider):
                     msg_dict["tool_calls"] = tc_list
             clean_messages.append(msg_dict)
 
+        use_think = self.think if think is None else think
         payload = {
-            "model": self.model,
+            "model": self._model_for(use_think),
             "messages": clean_messages,
             "stream": True,
             "keep_alive": self.keep_alive,
             "options": self._options()
         }
-        if tools and self._tools_supported:
+        if tools and payload["model"] not in self._no_tools:
             payload["tools"] = tools
         # Razonamiento por mensaje: en modelos híbridos (qwen3) no hay que recargar nada
-        if self._think_supported:
-            payload["think"] = self.think if think is None else think
+        if payload["model"] not in self._no_think:
+            payload["think"] = use_think
 
         thought_accumulated = ""
         content_accumulated = ""

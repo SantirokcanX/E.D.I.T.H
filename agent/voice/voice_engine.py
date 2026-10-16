@@ -77,6 +77,41 @@ class VoiceEngine:
                 return True
         return False
 
+    @staticmethod
+    def latex_to_speech(tex: str) -> str:
+        """Convierte LaTeX sencillo en español hablado: \\frac{a}{b} → "a entre b", x^2 → "x al cuadrado"."""
+        s = tex
+        s = re.sub(r"\\(?:begin|end)\{[a-z*]+\}", " ", s)
+        s = s.replace("&", " ").replace("\\\\", ", ")
+        # Límites de integrales y sumatorias: \int_0^1 → "la integral de 0 a 1 de"
+        s = re.sub(r"\\(int|sum)_\{?([^{}\s^]+)\}?\^\{?([^{}\s]+)\}?",
+                   lambda m: (" la integral" if m.group(1) == "int" else " la suma")
+                   + f" de {m.group(2)} a {m.group(3)} de ", s)
+        for _ in range(3):  # fracciones y raíces anidadas
+            s = re.sub(r"\\[dt]?frac\{([^{}]*)\}\{([^{}]*)\}", r" \1 entre \2 ", s)
+            s = re.sub(r"\\sqrt\{([^{}]*)\}", r" raíz de \1 ", s)
+        s = re.sub(r"\^\{?2\}?", " al cuadrado", s)
+        s = re.sub(r"\^\{?3\}?", " al cubo", s)
+        s = re.sub(r"\^\{([^{}]*)\}", r" elevado a \1", s)
+        s = re.sub(r"\^(\w)", r" elevado a \1", s)
+        s = re.sub(r"_\{([^{}]*)\}", r" sub \1", s)
+        s = re.sub(r"_(\w)", r" sub \1", s)
+        words = {
+            r"\\cdot": " por ", r"\\times": " por ", r"\\div": " entre ", r"\\pm": " más menos ",
+            r"\\leq?": " menor o igual que ", r"\\geq?": " mayor o igual que ", r"\\neq?": " distinto de ",
+            r"\\approx": " aproximadamente ", r"\\infty": " infinito ", r"\\pi": " pi ",
+            r"\\int": " la integral de ", r"\\sum": " la suma de ", r"\\lim": " el límite de ",
+            r"\\to": " tiende a ", r"\\(?:implies|Rightarrow)": " entonces ", r"\\alpha": " alfa ",
+            r"\\beta": " beta ", r"\\theta": " theta ", r"\\Delta": " delta ", r"\\,|\\;|\\quad": " ",
+        }
+        for pat, rep in words.items():
+            s = re.sub(pat + r"(?![a-zA-Z])", rep, s)
+        s = re.sub(r"\\[a-zA-Z]+", " ", s)  # cualquier otro comando
+        s = s.replace("=", " igual a ").replace("+", " más ").replace("<", " menor que ").replace(">", " mayor que ")
+        s = re.sub(r"(?<=\s)-(?=\s)|(?<=\w)\s*-\s*(?=\w)", " menos ", s)
+        s = re.sub(r"[{}]", " ", s)
+        return re.sub(r"\s+", " ", s).strip()
+
     def clean_text_for_speech(self, text: str) -> str:
         """
         Adapta el texto escrito a un lenguaje oral natural, fluido y expresivo.
@@ -91,6 +126,12 @@ class VoiceEngine:
         # Si hay bloques de código, sustituirlos por una mención hablada natural
         if "```" in text:
             text = re.sub(r"```[a-zA-Z]*\n[\s\S]*?```", " Te he preparado el bloque de código correspondiente en pantalla. ", text)
+
+        # Fórmulas LaTeX: leerlas en lenguaje natural en vez de deletrear los comandos
+        text = re.sub(r"\$\$([\s\S]+?)\$\$", lambda m: " " + self.latex_to_speech(m.group(1)) + ". ", text)
+        text = re.sub(r"\\\[([\s\S]+?)\\\]", lambda m: " " + self.latex_to_speech(m.group(1)) + ". ", text)
+        text = re.sub(r"\\\((.+?)\\\)", lambda m: self.latex_to_speech(m.group(1)), text)
+        text = re.sub(r"(?<![\w$])\$(?!\s)([^\n$]+?)(?<!\s)\$(?!\d)", lambda m: self.latex_to_speech(m.group(1)), text)
 
         # Eliminar etiquetas markdown y formatos
         text = re.sub(r"`([^`]+)`", r"\1", text)

@@ -30,6 +30,15 @@ except Exception:  # pragma: no cover
 
 app = FastAPI(title="EDITH Studio IDE & Companion Hub")
 
+
+@app.middleware("http")
+async def revalidate_static(request, call_next):
+    """La interfaz se revalida siempre (ETag): tras actualizar EDITH no se queda un app.js viejo en caché."""
+    response = await call_next(request)
+    if not request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 STATIC_DIR.mkdir(parents=True, exist_ok=True)

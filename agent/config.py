@@ -25,7 +25,10 @@ class Config:
 
         # Ollama settings
         cls.OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
-        cls.OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:4b")
+        # Modelo para respuestas rápidas (sin razonamiento) y, opcionalmente, otro para pensar a fondo.
+        # Si OLLAMA_DEEP_MODEL está vacío se usa OLLAMA_MODEL para todo (sirve con modelos híbridos).
+        cls.OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:4b-instruct")
+        cls.OLLAMA_DEEP_MODEL = os.getenv("OLLAMA_DEEP_MODEL", "qwen3:4b").strip()
         # Velocidad: mantener el modelo cargado en RAM/VRAM entre mensajes y limitar el contexto
         cls.OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "30m").strip()
         cls.OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "4096"))

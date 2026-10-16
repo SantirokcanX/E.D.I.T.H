@@ -21,6 +21,7 @@ def get_provider(provider_name: Optional[str] = None, model: Optional[str] = Non
         return OllamaProvider(
             base_url=Config.OLLAMA_BASE_URL,
             model=m,
+            deep_model=None if model else (Config.OLLAMA_DEEP_MODEL or None),
             keep_alive=Config.OLLAMA_KEEP_ALIVE,
             num_ctx=Config.OLLAMA_NUM_CTX,
             think=Config.OLLAMA_THINK,
