@@ -9,6 +9,7 @@
   * Atajo global Win + Shift + E para mostrar/ocultar EDITH desde cualquier programa.
   * Fase 15.3: también es el punto de entrada de EDITH.exe empaquetado con PyInstaller
     (build/edith.spec). EDITH.exe --self-test comprueba el paquete sin abrir ventanas.
+    EDITH.exe --access-link muestra el enlace con token para otro dispositivo (no hay main.py).
 """
 
 import ctypes
@@ -51,6 +52,7 @@ WEBVIEW_DIR = EDITH_HOME / "webview"  # perfil de WebView2: recuerda permisos (m
 
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 user32 = ctypes.WinDLL("user32", use_last_error=True)
+kernel32.AttachConsole.argtypes = [wintypes.DWORD]
 kernel32.CreateMutexW.restype = wintypes.HANDLE
 kernel32.CreateEventW.restype = wintypes.HANDLE
 kernel32.OpenEventW.restype = wintypes.HANDLE
@@ -105,6 +107,25 @@ def pick_port() -> int:
             except OSError:
                 continue
     raise RuntimeError(f"El puerto {wanted} está ocupado. Cambia EDITH_PORT en .env o cierra el programa que lo usa.")
+
+
+# ---------------------------------------------------------------- enlace de acceso
+def show_access_links(out=None) -> int:
+    """EDITH.exe --access-link: el enlace con token para otro dispositivo sin abrir la app (lo mismo que
+    Ajustes › Avanzado). Desde una terminal lo escribe en ella; con doble clic, en un cuadro de Windows."""
+    from agent.config import Config  # noqa: F401  (carga el .env)
+    from ide.auth import access_links_text
+    wanted = os.getenv("EDITH_PORT", "auto").strip()
+    text = access_links_text(int(wanted) if wanted.isdigit() else 8000)  # auto: 8000 salvo que esté ocupado
+    out = sys.stdout if out is None else out
+    ATTACH_PARENT_PROCESS = 0xFFFFFFFF
+    if out is None and kernel32.AttachConsole(ATTACH_PARENT_PROCESS):  # EDITH.exe no tiene consola propia
+        out = open("CONOUT$", "w", encoding="utf-8")
+    if out is None:
+        user32.MessageBoxW(None, text, "EDITH · enlace de acceso", 0x40)  # MB_ICONINFORMATION
+    else:
+        print(text, file=out, flush=True)
+    return 0
 
 
 LOADING_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8"><style>
@@ -375,6 +396,8 @@ class DesktopApp:
 
 def main():
     multiprocessing.freeze_support()  # EDITH.exe: los procesos hijos de multiprocessing no relanzan la app
+    if "--access-link" in sys.argv[1:]:
+        sys.exit(show_access_links())  # antes del registro: la salida va a la terminal, no al log
     setup_logging()
     test_arg = next((a for a in sys.argv[1:] if a.startswith("--self-test")), None)
     if test_arg:

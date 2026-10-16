@@ -1007,6 +1007,10 @@ select, textarea, input { font-family: var(--font-main); color: inherit; }
 .es-advanced { border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 12px; }
 .es-advanced summary { cursor: pointer; font-size: 13px; color: var(--text-secondary); }
 .es-advanced[open] { display: flex; flex-direction: column; gap: 12px; }
+.es-access { border-top: 1px solid var(--border-soft); padding-top: 14px; }
+.es-access-list { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.es-access-list:empty { display: none; }
+.es-access-list > input { align-self: stretch; }
 .es-qr { width: 220px; align-self: center; background: #fff; padding: 6px; border-radius: var(--radius-sm); }
 .es-summary { margin: 0; padding-left: 18px; color: var(--text-secondary); font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
 

@@ -111,11 +111,8 @@ def main():
         return
 
     if args.access_link:
-        from ide.auth import access_links
-        print("Enlace de acceso a EDITH Studio (contiene el token: no lo compartas):")
-        for link in access_links(args.port):
-            print(f"  {link}")
-        print("Desde la propia máquina basta con abrir http://localhost:%d (entra sola)." % args.port)
+        from ide.auth import access_links_text
+        print(access_links_text(args.port))
         return
 
     if args.no_ml:

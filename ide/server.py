@@ -25,7 +25,7 @@ from agent.tools.system_tools import (get_system_status, open_application, run_s
                                       control_system_volume, APP_ALIASES)
 from agent.tools.obsidian_tools import get_vault_path, sync_edith_session, search_vault
 from agent.channels.security import get_api_token
-from ide.auth import AccessGuard
+from ide.auth import AccessGuard, access_link_hint
 from ide.channels_api import router as channels_router, start_channels, stop_channels
 from ide.setup_api import router as setup_router
 
@@ -546,8 +546,7 @@ async def _startup_channels():
     # Puerto en uso (lo fija main.py o la app de escritorio); EDITH_PORT es solo el ajuste del usuario
     port = int(os.getenv("EDITH_RUNTIME_PORT") or "8000")
     get_api_token()  # se genera aquí la primera vez, no en la primera petición
-    print("[Seguridad] Interfaz y API protegidas con token. Para entrar desde otro dispositivo: "
-          "python main.py --access-link")
+    print(f"[Seguridad] Interfaz y API protegidas con token. Para entrar desde otro dispositivo: {access_link_hint()}")
     start_channels(provider, broadcast_ui, asyncio.get_running_loop(), port=port)
 
 

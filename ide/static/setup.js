@@ -460,6 +460,61 @@ const EdithSetup = (() => {
     render();
   }
 
+  // ------------------------------------------------------------ enlace para otro dispositivo
+  // El enlace lleva la clave de acceso: se copia sin mostrarla (solo aparece si falla el portapapeles).
+  const maskToken = (url) => url.replace(/([?&]token=)[^&]+/, "$1••••••••");
+
+  async function copyText(text, manualBox) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (e) {
+      const input = el("input", { type: "text", readonly: true, value: text, spellcheck: "false", "aria-label": "Enlace de acceso" });
+      manualBox.replaceChildren(input);
+      input.select();
+      try { return document.execCommand("copy"); } catch (e2) { return false; }
+    }
+  }
+
+  function renderAccessLink() {
+    const status = el("div", { class: "es-status", role: "status" });
+    const others = el("div", { class: "es-access-list" });
+    const manual = el("div", { class: "es-access-list" });
+    const copy = async (url) => {
+      manual.replaceChildren();
+      const ok = await copyText(url, manual);
+      status.className = ok ? "es-status ok" : "es-status err";
+      status.textContent = ok ? `✓ Copiado: ${maskToken(url)} · ábrelo en tu otro dispositivo.`
+        : "No pude usar el portapapeles: copia a mano el enlace de abajo (Ctrl+C).";
+    };
+    const linkButton = (url, text) => el("button", { type: "button", class: "es-link", text, onclick: () => copy(url) });
+    const btn = el("button", { type: "button", id: "es-access-link", class: "es-btn es-btn-ghost", text: "🔗 Copiar enlace para otro dispositivo" });
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      others.replaceChildren();
+      manual.replaceChildren();
+      try {
+        const links = await api("/api/setup/access-link", { method: "POST" });
+        if (links.remote.length) {
+          await copy(links.remote[0]);
+          others.append(...links.remote.slice(1).map((url) => linkButton(url, `Copiar ${maskToken(url)}`)));
+        } else {
+          status.className = "es-status";
+          status.textContent = links.no_remote;
+          others.append(linkButton(links.local, "Copiar el enlace para otro navegador de esta computadora"));
+        }
+      } catch (e) {
+        status.className = "es-status err";
+        status.textContent = e.message;
+      }
+      btn.disabled = false;
+    });
+    return el("div", { class: "es-field es-access" },
+      el("label", { for: "es-access-link", text: "Abrir EDITH desde otro dispositivo" }),
+      el("div", { class: "es-help", text: "El enlace lleva tu clave de acceso: quien lo tenga entra en EDITH. Ábrelo solo en tus dispositivos y no lo compartas." }),
+      el("div", {}, btn), status, others, manual);
+  }
+
   // ------------------------------------------------------------ panel de Ajustes
   async function openSettings() {
     if (document.querySelector(".es-backdrop")) return;
@@ -480,6 +535,7 @@ const EdithSetup = (() => {
         document.addEventListener("es-models-changed", () => renderHardware(hw, fields));
       }
       page.append(...fields.map((f) => f.node));
+      if (section.id === "avanzado") page.append(renderAccessLink());
       const tab = el("button", { type: "button", role: "tab", class: i === 0 ? "active" : "", text: `${section.icon} ${section.title}` });
       tab.addEventListener("click", () => {
         nav.querySelectorAll("button").forEach((b) => b.classList.remove("active"));

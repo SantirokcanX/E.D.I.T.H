@@ -4,7 +4,9 @@
   (%LOCALAPPDATA%\\EDITH; se genera solo la primera vez).
 * La interfaz lo lleva en una cookie HttpOnly (JavaScript no puede leerla). La recibe:
     - sola, al abrir EDITH desde la propia máquina (127.0.0.1 / localhost, sin proxy delante), o
-    - con el enlace /?token=... desde otro dispositivo (python main.py --access-link lo muestra).
+    - con el enlace /?token=... desde otro dispositivo. Lo copia ⚙️ Ajustes › Avanzado › «Copiar enlace
+      para otro dispositivo» y lo muestran EDITH.exe --access-link (app empaquetada) y
+      python main.py --access-link (desde el código).
 * Scripts y herramientas: cabecera "Authorization: Bearer <token>".
 * Host permitido en todas las peticiones (bloquea DNS rebinding) y Origin del mismo sitio en el
   WebSocket y en las peticiones que cambian estado (bloquea CSRF desde otras webs).
@@ -14,7 +16,7 @@
 
 import hmac
 from typing import Optional, Tuple
-from urllib.parse import parse_qs, urlencode, urlsplit
+from urllib.parse import parse_qs, quote, urlencode, urlsplit
 
 from starlette.datastructures import Headers
 from starlette.requests import cookie_parser
@@ -22,6 +24,7 @@ from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse, R
 
 from agent.channels.security import get_api_token
 from agent.config import Config
+from agent.paths import FROZEN
 
 # Rutas con autenticación propia: no usan el token de la interfaz
 OWN_AUTH_PATHS = {
@@ -45,8 +48,27 @@ font-family:-apple-system,'Segoe UI',sans-serif}}main{{max-width:460px;padding:2
 border-radius:14px;background:#17171f}}h1{{font-size:20px;margin:0 0 10px}}p{{color:#a6a2bd;line-height:1.5}}
 code{{background:#20202b;padding:2px 6px;border-radius:6px;color:#ece9f5}}</style></head>
 <body><main><h1>🔒 EDITH está protegida</h1><p>{message}</p>
-<p>En la máquina donde corre EDITH, ejecuta <code>python main.py --access-link</code> y abre aquí el enlace que muestra.
-Desde esa misma máquina basta con abrir <code>http://localhost:8000</code>.</p></main></body></html>"""
+<p>{how}</p></main></body></html>"""
+# Sin emojis ni flechas: estos textos también salen por consola y archivos con cp1252
+SETTINGS_BUTTON = "Ajustes › Avanzado › «Copiar enlace para otro dispositivo»"
+
+
+def access_link_command() -> str:
+    """La orden que muestra el enlace: la app empaquetada (Fase 15.3) no trae main.py ni Python."""
+    return "EDITH.exe --access-link" if FROZEN else "python main.py --access-link"
+
+
+def access_link_hint() -> str:
+    """Dónde conseguir el enlace de acceso, en una línea (aviso de arranque del servidor)."""
+    return f"{SETTINGS_BUTTON} o {access_link_command()}"
+
+
+def login_help_html(port: Optional[int]) -> str:
+    """Segundo párrafo de la página de acceso: cómo conseguir el enlace en la máquina de EDITH."""
+    here = "abrir la app de EDITH" if FROZEN or not port else f"abrir <code>http://localhost:{port}</code>"
+    return (f"En la computadora donde corre EDITH, entra en <b>⚙️ {SETTINGS_BUTTON}</b> "
+            f"(o ejecuta <code>{access_link_command()}</code>) y abre aquí ese enlace. "
+            f"Desde esa misma computadora basta con {here}.")
 
 
 def hostname(netloc: str) -> str:
@@ -104,7 +126,7 @@ def _request_token(headers: Headers, name: str) -> Tuple[Optional[str], str]:
     return (value, "cookie") if value else (None, "")
 
 
-def _is_local_browser(scope, headers: Headers) -> bool:
+def is_local_browser(scope, headers: Headers) -> bool:
     ip = (scope.get("client") or ("", 0))[0] or ""
     if not (ip == "::1" or ip.startswith("127.")):
         return False
@@ -173,7 +195,7 @@ class AccessGuard:
                 return await self._login_link(scope, receive, send, path, link[0])
             if authed:
                 return await self.app(scope, receive, self._setting_cookie(scope, send, token) if via == "cookie" else send)
-            if Config.EDITH_LOCAL_AUTOLOGIN and _is_local_browser(scope, headers):
+            if Config.EDITH_LOCAL_AUTOLOGIN and is_local_browser(scope, headers):
                 return await self.app(scope, receive, self._setting_cookie(scope, send, get_api_token()))
             if path in PUBLIC_PATHS:
                 return await self.app(scope, receive, send)
@@ -227,16 +249,39 @@ class AccessGuard:
         elif path.startswith("/api/") or scope.get("method", "GET").upper() not in SAFE_METHODS:
             resp = JSONResponse({"detail": message}, status_code=status)
         else:
-            resp = HTMLResponse(LOGIN_PAGE.format(message=message), status_code=status)
+            port = (scope.get("server") or ("", None))[1]
+            resp = HTMLResponse(LOGIN_PAGE.format(message=message, how=login_help_html(port)), status_code=status)
         resp.headers["Cache-Control"] = "no-store"
         await resp(scope, receive, send)
 
 
-def access_links(port: int = 8000) -> list:
-    """Enlaces de acceso (con token) para abrir EDITH desde otro dispositivo."""
-    token = get_api_token()
-    links = [f"http://localhost:{port}/?token={token}"]
-    if Config.PUBLIC_BASE_URL:
-        links.append(f"{Config.PUBLIC_BASE_URL}/?token={token}")
-    links += [f"http://{h}:{port}/?token={token}" for h in Config.EDITH_ALLOWED_HOSTS]
-    return links
+def _link(base: str) -> str:
+    return f"{base}/?token={quote(get_api_token(), safe='')}"
+
+
+def local_access_link(port: int = 8000) -> str:
+    """Enlace con token para otro navegador de esta misma computadora."""
+    return _link(f"http://localhost:{port}")
+
+
+def remote_access_links(port: int = 8000) -> list:
+    """Enlaces con token para otro dispositivo: el de PUBLIC_BASE_URL y uno por host de EDITH_ALLOWED_HOSTS.
+    Vacío si no hay ninguno configurado: el servidor solo escucha en 127.0.0.1."""
+    bases = ([Config.PUBLIC_BASE_URL] if Config.PUBLIC_BASE_URL else []) + \
+        [f"http://{h}:{port}" for h in Config.EDITH_ALLOWED_HOSTS]
+    return [_link(b) for b in dict.fromkeys(bases)]
+
+
+NO_REMOTE_ACCESS = ("EDITH solo escucha en esta computadora. Para entrar desde otro dispositivo pon una URL "
+                    "pública en Ajustes › WhatsApp y teléfono › «URL pública HTTPS» (Tailscale Funnel, "
+                    "Cloudflare Tunnel…) o añade su nombre a EDITH_ALLOWED_HOSTS en el .env.")
+
+
+def access_links_text(port: int = 8000) -> str:
+    """Lo que muestran EDITH.exe --access-link y python main.py --access-link."""
+    remote = remote_access_links(port)
+    lines = ["Enlace de acceso a EDITH (contiene la clave de acceso: no lo compartas):"]
+    lines += [f"  {link}" for link in remote] or [f"  {NO_REMOTE_ACCESS}"]
+    here = f"http://localhost:{port} (entra sola)" if Config.EDITH_LOCAL_AUTOLOGIN else local_access_link(port)
+    lines.append(f"Desde esta computadora: {'la app de EDITH o ' if FROZEN else ''}{here}")
+    return "\n".join(lines)

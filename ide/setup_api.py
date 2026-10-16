@@ -7,13 +7,14 @@ from pathlib import Path
 from typing import Any, Dict, List
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 
 from agent.config import Config
 from agent.setup import settings as setup_settings
 from agent.setup.hardware import diagnose
 from agent.setup.models import PullManager
+from ide import auth
 
 router = APIRouter()
 _pulls = PullManager(Config.OLLAMA_BASE_URL)
@@ -27,6 +28,13 @@ def same_origin(request: Request):
     origin = request.headers.get("origin")
     if origin and urlparse(origin).netloc != host:
         raise HTTPException(status_code=403, detail="Origen no permitido")
+
+
+def this_computer(request: Request):
+    """Además de same_origin: navegador de esta misma máquina (127.0.0.1) y sin túnel ni proxy delante."""
+    same_origin(request)
+    if not auth.is_local_browser(request.scope, request.headers):
+        raise HTTPException(status_code=403, detail="Solo desde esta computadora")
 
 
 class SettingsRequest(BaseModel):
@@ -178,3 +186,14 @@ def vault_check(req: VaultRequest):
             pass
     return {"path": str(p), "exists": exists, "is_obsidian": (p / ".obsidian").is_dir(), "notes": notes,
             "writable": writable, "has_structure": exists and all((p / f).is_dir() for f in VAULT_FOLDERS)}
+
+
+# ---------------------------------------------------------------- acceso desde otro dispositivo
+@router.post("/api/setup/access-link", dependencies=[Depends(this_computer)])
+def access_link(request: Request, response: Response):
+    """Enlace con token para abrir EDITH desde otro dispositivo (botón de Ajustes → Avanzado). En la app
+    empaquetada no hay main.py: este es el camino. POST: con cookie, el middleware exige además el Origin."""
+    response.headers["Cache-Control"] = "no-store"
+    port = request.scope["server"][1] if request.scope.get("server") else int(os.getenv("EDITH_RUNTIME_PORT") or 8000)
+    return {"remote": auth.remote_access_links(port), "local": auth.local_access_link(port),
+            "no_remote": auth.NO_REMOTE_ACCESS}
