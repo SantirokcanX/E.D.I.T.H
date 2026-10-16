@@ -223,6 +223,8 @@ def _validate(key: str, value: Any) -> Tuple[Optional[str], Optional[str]]:
     text = str(value if value is not None else "").strip()
     if not text:
         return ("", None) if empty_ok else (None, f"«{f['label']}» no puede quedar vacío.")
+    if any(c in text for c in "\r\n\x00"):  # una línea por ajuste: nada de colar otras claves en el .env
+        return None, f"«{f['label']}» no puede tener saltos de línea."
     if t == "phone":
         n = re.sub(r"[\s\-()]", "", text)
         return (n if n.startswith("+") else "+" + n, None) if _PHONE.match(n) else (None, f"Número no válido: {text}")
@@ -279,8 +281,8 @@ def save(values: Dict[str, Any]) -> Dict[str, Any]:
     start_with_windows: Optional[bool] = None
     for key, value in values.items():
         f = FIELDS.get(key)
-        if not f:
-            continue  # solo claves conocidas: nada arbitrario llega al .env
+        if not f or (f.get("desktop_only") and not is_desktop()):
+            continue  # solo claves conocidas (y las de escritorio solo en la app): nada arbitrario llega al .env
         if f["type"] == "secret" and value == MASK:
             continue  # sin cambios
         if f.get("store") == "profile":
