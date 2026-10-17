@@ -4,10 +4,6 @@ let currentMode = "standard"; // 'standard', 'coworking' o 'auto' (decide el ML)
 let lastMlQuery = "";
 let voiceEnabled = true;
 let activeFilePath = "notas_del_dia.md";
-let recognition = null;
-let wakeWordActive = true;
-let wakeFailures = 0;     // fallos seguidos del reconocimiento de voz
-let isListeningForCommand = false;
 let activeSessionId = null;
 let streamingEl = null;   // burbuja donde se escribe la respuesta token a token
 let streamingText = "";
@@ -38,7 +34,7 @@ window.fetch = async (...args) => {
 document.addEventListener("DOMContentLoaded", () => {
   initMermaid();
   initWebSocket();
-  initSpeechRecognition();
+  initWakeWord();
   loadStatus();
   loadWorkspaceFiles();
   loadSessions();
@@ -72,104 +68,362 @@ function initMermaid() {
   }
 }
 
-// 2. Speech Recognition & Wake Word ("Oye EDITH")
-function initSpeechRecognition() {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-    console.warn("Reconocimiento de voz no soportado en este entorno.");
-    const btnWake = document.getElementById("btnWakeWord");
+// 2. «Oye EDITH»: micrófono -> detector de voz aquí -> Whisper local en EDITH (ide/voice_api.py).
+// Antes se usaba el reconocimiento del navegador (Web Speech API): en la app de escritorio (WebView2)
+// falla con «network» al segundo de arrancar, en Chrome/Edge manda el audio a la nube, y la frase se
+// buscaba como subcadena ("edit" saltaba con «editar», «editorial» o con la propia voz de EDITH).
+const WAKE_SENS = {  // voz = energía por encima del ruido de fondo × factor (y nunca por debajo de min)
+  baja: { factor: 3.5, min: 0.012 },
+  normal: { factor: 2.6, min: 0.008 },
+  alta: { factor: 1.9, min: 0.005 },
+};
+const WAKE_RATE = 16000;
+const wake = {
+  initialized: false,
+  wanted: true,          // el usuario no lo ha pausado (botón; se recuerda en este navegador)
+  enabled: true,         // WAKE_WORD_ENABLED en Ajustes
+  sensitivity: "normal",
+  ready: false,          // el modelo de Whisper ya está cargado en EDITH
+  stream: null, ctx: null, node: null, source: null,
+  mode: "wake",          // "wake" o "command" (tras «Oye EDITH» sin orden, se queda escuchando)
+  oneShot: false,        // botón 🎙️ con «Oye EDITH» pausado: escuchar una orden y soltar el micrófono
+  commandTimer: null,
+  noise: 0.004, speaking: false, loudFrames: 0, quietFrames: 0, voicedFrames: 0,
+  preroll: [], chunks: [], samples: 0,
+  inFlight: false, pending: null, failures: 0,
+  restartTimer: null, restartDelay: 1000, prepareTimer: null,
+  edithTalkingUntil: 0,
+};
+
+async function initWakeWord() {
+  const btnWake = document.getElementById("btnWakeWord");
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.AudioWorkletNode) {
+    console.warn("Este navegador no permite captar el micrófono: «Oye EDITH» no disponible.");
     if (btnWake) btnWake.style.display = "none";
     return;
   }
+  try { wake.wanted = localStorage.getItem("edith.wake") !== "off"; } catch (e) {}
+  // Que EDITH no se oiga a sí misma: mientras habla (y un instante después) no se capta voz
+  const audio = document.getElementById("edithAudio");
+  audio.addEventListener("play", () => resetWakeSegment());
+  for (const ev of ["pause", "ended"]) audio.addEventListener(ev, () => { wake.edithTalkingUntil = performance.now() + 700; });
+  // Micrófono enchufado o cambiado: reintentar sin esperar
+  navigator.mediaDevices.addEventListener?.("devicechange", () => {
+    if (wakeShouldListen() && !wake.stream) scheduleWakeRestart(500);
+  });
+  wake.initialized = true;
+  await refreshWakeConfig();
+}
 
-  recognition = new SpeechRecognition();
-  recognition.continuous = true;
-  recognition.interimResults = true;
-  recognition.lang = "es-ES";
+function wakeShouldListen() {
+  return (wake.enabled && wake.wanted) || wake.mode === "command";
+}
 
-  recognition.onresult = (event) => {
-    let transcript = "";
-    for (let i = event.resultIndex; i < event.results.length; ++i) {
-      transcript += event.results[i][0].transcript;
-    }
-    const clean = transcript.toLowerCase().trim();
-    wakeFailures = 0;
-
-    const wakeKeywords = ["edith", "oye edith", "hey edith", "hola edith", "edit", "oye edit"];
-    const containsWake = wakeKeywords.some(w => clean.includes(w));
-
-    if (containsWake && !isListeningForCommand) {
-      triggerWakeAction(clean);
-    } else if (isListeningForCommand) {
-      const input = document.getElementById("promptInput");
-      input.value = transcript;
-      if (event.results[event.results.length - 1].isFinal) {
-        isListeningForCommand = false;
-        document.getElementById("btnWakeWord").classList.remove("listening");
-        document.getElementById("chatForm").dispatchEvent(new Event("submit"));
-      }
-    }
-  };
-
-  recognition.onerror = (e) => {
-    if (e.error === "no-speech" || e.error === "aborted") return;
-    console.warn("Error en reconocimiento de voz:", e.error);
-    // Sin permiso de micrófono o sin servicio de voz (p. ej. dentro de WebView2): reintentar
-    // solo genera un bucle de errores, así que se pausa hasta que el usuario lo reactive.
-    if (["not-allowed", "service-not-allowed", "audio-capture"].includes(e.error)) {
-      setWakeWord(false, `🔇 "Oye EDITH" sin micrófono`);
-    } else if (++wakeFailures >= 3) {
-      setWakeWord(false, `🔇 "Oye EDITH" sin servicio de voz`);
-    }
-  };
-
-  recognition.onend = () => {
-    if (wakeWordActive) {
-      // Espera creciente tras fallos para no reiniciar en bucle
-      setTimeout(() => {
-        if (wakeWordActive) { try { recognition.start(); } catch (err) {} }
-      }, 300 * (wakeFailures + 1));
-    }
-  };
-
+// Ajustes › Voz cambia sin recargar la página (setup.js llama a loadStatus tras guardar)
+async function refreshWakeConfig() {
   try {
-    recognition.start();
-  } catch (err) {
-    console.log("Inicio de reconocimiento diferido:", err);
+    const st = await (await fetch("/api/voice/wake/status")).json();
+    wake.enabled = !!st.enabled;
+    wake.sensitivity = st.sensitivity || "normal";
+    wake.ready = !!st.ready;
+  } catch (e) {
+    return scheduleWakeRestart();
   }
+  if (wakeShouldListen()) startWakeWord();
+  else stopWakeWord(wake.enabled ? null : `🔇 «Oye EDITH» desactivado`);
 }
 
 function setWakeWord(active, label) {
-  wakeWordActive = active;
   const btn = document.getElementById("btnWakeWord");
   if (btn) btn.classList.toggle("active", active);
   const lbl = document.getElementById("wakeWordLabel");
-  if (lbl) lbl.innerText = label || (active ? `🎙️ "Oye EDITH" Activo` : `🔇 "Oye EDITH" Pausa`);
+  if (lbl) lbl.innerText = label || (active ? `🎙️ «Oye EDITH» activo` : `🔇 «Oye EDITH» en pausa`);
 }
 
-function triggerWakeAction(spokenText) {
-  isListeningForCommand = true;
-  const btn = document.getElementById("btnWakeWord");
-  btn.classList.add("listening");
+async function startWakeWord() {
+  clearTimeout(wake.restartTimer);
+  if (!wake.ready && !(await prepareWakeModel())) return;
+  if (await startMic()) {
+    wake.restartDelay = 1000;
+    if (wake.mode !== "command") setWakeWord(true);
+  }
+}
 
-  // Sonido sutil de confirmación
-  playActivationPing();
+function stopWakeWord(label) {
+  clearTimeout(wake.restartTimer);
+  clearTimeout(wake.prepareTimer);
+  leaveCommandMode();
+  stopMic();  // soltar el micrófono: se apaga el indicador de Windows
+  setWakeWord(false, label);
+}
 
-  // Revisar si ya dijo la orden en la misma frase (ej. "Oye EDITH abre la calculadora")
-  const wakeKeywords = ["edith", "oye edith", "hey edith", "hola edith", "edit", "oye edit"];
-  for (const w of wakeKeywords) {
-    if (spokenText.includes(w)) {
-      const parts = spokenText.split(w);
-      const command = parts[parts.length - 1].trim();
-      if (command.length > 2) {
-        document.getElementById("promptInput").value = command;
-        isListeningForCommand = false;
-        btn.classList.remove("listening");
-        document.getElementById("chatForm").dispatchEvent(new Event("submit"));
-        return;
+// El modelo se carga (o se descarga la primera vez) en EDITH antes de abrir el micrófono
+async function prepareWakeModel() {
+  clearTimeout(wake.prepareTimer);
+  try {
+    const st = await (await fetch("/api/voice/wake/prepare", { method: "POST" })).json();
+    wake.ready = !!st.ready;
+    if (wake.ready) return true;
+    setWakeWord(false, st.error ? `⚠️ «Oye EDITH» sin modelo de voz` : `⏳ Preparando «Oye EDITH»…`);
+    if (st.error) console.warn(st.error);
+  } catch (e) {
+    setWakeWord(false, `⚠️ «Oye EDITH» sin conexión con EDITH`);
+  }
+  wake.prepareTimer = setTimeout(() => { if (wakeShouldListen()) startWakeWord(); }, 2500);
+  return false;
+}
+
+function scheduleWakeRestart(delay) {
+  clearTimeout(wake.restartTimer);
+  const wait = delay ?? wake.restartDelay;
+  wake.restartDelay = Math.min(wake.restartDelay * 2, 30000);  // 1 s, 2 s, 4 s… hasta 30 s
+  wake.restartTimer = setTimeout(() => { if (wakeShouldListen()) startWakeWord(); }, wait);
+}
+
+async function startMic() {
+  if (wake.stream) return true;
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    });
+  } catch (e) {
+    const denied = e.name === "NotAllowedError" || e.name === "SecurityError";
+    const missing = e.name === "NotFoundError" || e.name === "OverconstrainedError";
+    console.warn("Micrófono no disponible:", e.name, e.message);
+    setWakeWord(false, denied ? `🔇 «Oye EDITH» sin permiso de micrófono`
+      : missing ? `🔇 «Oye EDITH»: no hay micrófono` : `🔇 «Oye EDITH»: micrófono ocupado`);
+    if (!denied) scheduleWakeRestart();  // sin permiso no se insiste: se reintenta con el botón
+    return false;
+  }
+  if (!wakeShouldListen()) {  // lo pausaron mientras se pedía el permiso
+    stream.getTracks().forEach((t) => t.stop());
+    return false;
+  }
+  wake.stream = stream;
+  try {
+    await buildWakeAudioGraph();
+  } catch (e) {
+    console.warn("No pude procesar el audio del micrófono:", e);
+    stopMic();
+    setWakeWord(false, `⚠️ «Oye EDITH»: error de audio`);
+    scheduleWakeRestart();
+    return false;
+  }
+  // Micrófono desconectado o apagado: volver a intentarlo
+  stream.getAudioTracks()[0]?.addEventListener("ended", () => {
+    stopMic();
+    if (wakeShouldListen()) { setWakeWord(false, `🔇 «Oye EDITH»: se perdió el micrófono`); scheduleWakeRestart(); }
+  });
+  return true;
+}
+
+async function buildWakeAudioGraph() {
+  let ctx;
+  try {
+    ctx = new AudioContext({ sampleRate: WAKE_RATE });
+    wake.source = ctx.createMediaStreamSource(wake.stream);
+  } catch (e) {  // navegadores que no remuestrean el micrófono: frecuencia nativa y se reduce aquí
+    if (ctx) ctx.close();
+    ctx = new AudioContext();
+    wake.source = ctx.createMediaStreamSource(wake.stream);
+  }
+  wake.ctx = ctx;
+  await ctx.audioWorklet.addModule("wake-worklet.js");
+  wake.node = new AudioWorkletNode(ctx, "edith-mic");
+  wake.node.port.onmessage = (ev) => onWakeFrame(toRate16k(ev.data, ctx.sampleRate));
+  wake.source.connect(wake.node);
+  wake.node.connect(ctx.destination);  // la salida es silencio: solo para que el grafo se procese
+  if (ctx.state !== "running") await ctx.resume().catch(() => {});
+  if (ctx.state !== "running") {
+    // Política de audio del navegador: hace falta un clic o una tecla antes de procesar sonido
+    setWakeWord(false, `🎙️ Toca la página para activar «Oye EDITH»`);
+    const resume = () => ctx.resume().then(() => { if (wake.ctx === ctx && wake.mode !== "command") setWakeWord(true); });
+    document.addEventListener("pointerdown", resume, { once: true });
+    document.addEventListener("keydown", resume, { once: true });
+  }
+}
+
+function stopMic() {
+  resetWakeSegment();
+  try { wake.source?.disconnect(); wake.node?.disconnect(); } catch (e) {}
+  if (wake.node) wake.node.port.onmessage = null;
+  wake.stream?.getTracks().forEach((t) => t.stop());
+  wake.ctx?.close().catch(() => {});
+  wake.stream = wake.ctx = wake.node = wake.source = null;
+}
+
+function toRate16k(input, rate) {
+  if (rate === WAKE_RATE) return input;
+  const ratio = rate / WAKE_RATE;
+  const out = new Float32Array(Math.floor(input.length / ratio));
+  for (let i = 0; i < out.length; i++) {  // promedio de cada ventana: filtra lo que no cabe en 16 kHz
+    const a = Math.floor(i * ratio), b = Math.min(input.length, Math.floor((i + 1) * ratio));
+    let s = 0;
+    for (let j = a; j < b; j++) s += input[j];
+    out[i] = s / Math.max(1, b - a);
+  }
+  return out;
+}
+
+function resetWakeSegment() {
+  wake.speaking = false;
+  wake.loudFrames = wake.quietFrames = wake.voicedFrames = 0;
+  wake.preroll = [];
+  wake.chunks = [];
+  wake.samples = 0;
+}
+
+function edithIsTalking() {
+  const audio = document.getElementById("edithAudio");
+  return (audio && !audio.paused && !audio.ended) || performance.now() < wake.edithTalkingUntil;
+}
+
+// Detector de voz por energía con ruido de fondo adaptativo: solo los tramos con voz van a Whisper
+function onWakeFrame(frame) {
+  if (!frame.length || !wake.stream) return;
+  if (edithIsTalking()) return resetWakeSegment();
+  let sum = 0;
+  for (let i = 0; i < frame.length; i++) sum += frame[i] * frame[i];
+  const rms = Math.sqrt(sum / frame.length);
+  const sens = WAKE_SENS[wake.sensitivity] || WAKE_SENS.normal;
+  const threshold = Math.max(wake.noise * sens.factor, sens.min);
+  const command = wake.mode === "command";
+
+  if (!wake.speaking) {
+    wake.preroll.push(frame);
+    if (wake.preroll.length > 8) wake.preroll.shift();  // 320 ms antes de que empiece la voz
+    if (rms > threshold) {
+      if (++wake.loudFrames >= 2) {
+        wake.speaking = true;
+        wake.chunks = wake.preroll;
+        wake.samples = wake.chunks.reduce((n, c) => n + c.length, 0);
+        wake.preroll = [];
+        wake.voicedFrames = wake.loudFrames;
+        wake.quietFrames = 0;
+        if (command) clearTimeout(wake.commandTimer);  // está hablando: no cortar la espera
       }
+    } else {
+      wake.loudFrames = 0;
+      wake.noise = Math.max(0.0005, wake.noise * 0.95 + rms * 0.05);  // solo se aprende en silencio
+    }
+    return;
+  }
+
+  wake.chunks.push(frame);
+  wake.samples += frame.length;
+  if (rms > threshold * 0.7) { wake.quietFrames = 0; wake.voicedFrames++; } else wake.quietFrames++;
+  const pauseFrames = command ? 25 : 15;   // 1 s de silencio al dictar la orden, 0,6 s para «Oye EDITH»
+  const maxSamples = (command ? 15 : 8) * WAKE_RATE;
+  if (wake.quietFrames >= pauseFrames || wake.samples >= maxSamples) finishWakeSegment();
+}
+
+function finishWakeSegment() {
+  const voiced = wake.voicedFrames;
+  const chunks = wake.chunks, total = wake.samples;
+  resetWakeSegment();
+  if (voiced < 7) {  // menos de ~0,3 s de voz: un golpe, una tos, un clic
+    if (wake.mode === "command") armCommandTimeout();
+    return;
+  }
+  const pcm = new Int16Array(total);
+  let o = 0;
+  for (const c of chunks) for (let i = 0; i < c.length; i++) {
+    const v = Math.max(-1, Math.min(1, c[i]));
+    pcm[o++] = v < 0 ? v * 32768 : v * 32767;
+  }
+  if (wake.inFlight) wake.pending = pcm.buffer;  // se manda al terminar el anterior (gana el último)
+  else sendWakeSegment(pcm.buffer);
+}
+
+async function sendWakeSegment(buffer) {
+  const mode = wake.mode;
+  wake.inFlight = true;
+  try {
+    const res = await fetch(`/api/voice/wake/listen?mode=${mode}`, {
+      method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: buffer,
+    });
+    if (res.status === 409) { wake.enabled = false; return stopWakeWord(`🔇 «Oye EDITH» desactivado`); }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (wake.failures >= 3 && wake.stream) setWakeWord(true);
+    wake.failures = 0;
+    if (data.loading) { wake.ready = false; return prepareWakeModel(); }
+    if (data.busy) return;
+    if (mode === "command") return handleSpokenCommand(data.command);
+    if (data.wake) onWakeDetected(data.command);
+  } catch (e) {
+    console.warn("«Oye EDITH»: no se pudo transcribir el tramo:", e);
+    if (++wake.failures >= 3) setWakeWord(false, `⚠️ «Oye EDITH»: EDITH no responde`);
+    if (mode === "command") leaveCommandMode();
+  } finally {
+    wake.inFlight = false;
+    if (wake.pending) {
+      const next = wake.pending;
+      wake.pending = null;
+      sendWakeSegment(next);
     }
   }
+}
+
+function onWakeDetected(command) {
+  playActivationPing();
+  if (command && command.replace(/[^\p{L}\p{N}]/gu, "").length > 2) return submitVoiceCommand(command);
+  enterCommandMode();  // solo dijo «Oye EDITH»: esperar la orden
+}
+
+function enterCommandMode() {
+  wake.mode = "command";
+  resetWakeSegment();
+  wake.edithTalkingUntil = performance.now() + 250;  // que el pitido no cuente como voz
+  document.getElementById("btnWakeWord")?.classList.add("listening");
+  setWakeWord(true, `🎙️ Te escucho…`);
+  armCommandTimeout();
+}
+
+function armCommandTimeout() {
+  clearTimeout(wake.commandTimer);
+  wake.commandTimer = setTimeout(() => {  // nadie habló: volver a esperar «Oye EDITH»
+    if (!wake.speaking && !wake.inFlight) leaveCommandMode();
+    else armCommandTimeout();
+  }, 8000);
+}
+
+function leaveCommandMode() {
+  clearTimeout(wake.commandTimer);
+  if (wake.mode !== "command") return;
+  wake.mode = "wake";
+  document.getElementById("btnWakeWord")?.classList.remove("listening");
+  if (wake.oneShot || !(wake.enabled && wake.wanted)) {
+    wake.oneShot = false;
+    stopMic();
+    setWakeWord(false);
+  } else {
+    setWakeWord(!!wake.stream);
+  }
+}
+
+function handleSpokenCommand(text) {
+  leaveCommandMode();
+  if (text && text.trim()) submitVoiceCommand(text.trim());
+}
+
+function submitVoiceCommand(text) {
+  document.getElementById("promptInput").value = text;
+  document.getElementById("chatForm").dispatchEvent(new Event("submit"));
+}
+
+// Botón 🎙️: dictar una orden ahora, aunque «Oye EDITH» esté en pausa
+async function listenForCommandNow() {
+  if (!wake.initialized) return;
+  if (!wake.stream) {
+    wake.oneShot = !(wake.enabled && wake.wanted);
+    wake.mode = "command";  // para que startMic no suelte el micrófono
+    if (!wake.ready && !(await prepareWakeModel())) { wake.mode = "wake"; return; }
+    if (!(await startMic())) { wake.mode = "wake"; wake.oneShot = false; return; }
+  }
+  playActivationPing();
+  enterCommandMode();
 }
 
 function playActivationPing() {
@@ -549,9 +803,19 @@ async function loadStatus() {
   try {
     const res = await fetch("/api/status");
     const data = await res.json();
-    if (data.voice_key) {
-      document.getElementById("voiceSelect").value = data.voice_key;
+    const select = document.getElementById("voiceSelect");
+    if (Array.isArray(data.available_voices) && data.available_voices.length) {
+      // Las voces salen de EDITH (VoiceEngine.VOICES): una voz nueva aparece sin tocar el HTML
+      select.replaceChildren(...data.available_voices.map((v) => {
+        const opt = document.createElement("option");
+        opt.value = v.key;
+        opt.textContent = v.name.split(" (")[0];
+        opt.title = v.name;
+        return opt;
+      }));
     }
+    if (data.voice_key) select.value = data.voice_key;
+    if (wake.initialized) refreshWakeConfig();  // Ajustes › Voz pudo cambiar «Oye EDITH»
   } catch (e) {}
 }
 
@@ -1055,19 +1319,25 @@ function setupEventListeners() {
   // Botón Micrófono
   const btnMic = document.getElementById("btnMicInput");
   btnMic.addEventListener("click", () => {
-    triggerWakeAction("");
+    listenForCommandNow();
   });
 
   // Wake Word Toggle
   const btnWake = document.getElementById("btnWakeWord");
   btnWake.addEventListener("click", () => {
-    wakeFailures = 0;
-    setWakeWord(!wakeWordActive);
-    if (wakeWordActive) {
-      try { recognition.start(); } catch (err) {}
-    } else {
-      try { recognition.stop(); } catch (err) {}
+    if (!wake.enabled) {
+      showNotificationToast({ level: "info", title: "«Oye EDITH» está desactivado", message: "Actívalo en ⚙️ Ajustes › Voz." });
+      return;
     }
+    if (wake.wanted && wake.stream) {
+      wake.wanted = false;
+      stopWakeWord();
+    } else {  // activarlo, o reintentar tras un error (p. ej. después de dar permiso al micrófono)
+      wake.wanted = true;
+      wake.restartDelay = 1000;
+      startWakeWord();
+    }
+    try { localStorage.setItem("edith.wake", wake.wanted ? "on" : "off"); } catch (e) {}
   });
 
   // Selector de Voz

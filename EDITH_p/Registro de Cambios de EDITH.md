@@ -13,6 +13,125 @@ Bitácora técnica de cada versión. Plan general: [[Plan de Cambios y Evolució
 
 ---
 
+## v0.0.10 — 17/10/2026 · Voces que suenan distinto, voz «Viernes» y «Oye EDITH» con Whisper local
+Rama `claude/eloquent-perlman-e610ae`, encima de `main` (`36aac2e`). Tres problemas de voz: todas las voces sonaban igual, faltaba una voz con estilo «Viernes» y «Oye EDITH» no funcionaba en la app. Primero se midió la causa de cada uno.
+
+### 🔊 Por qué todas las voces sonaban igual
+- **Causa**: `edge-tts` 7.2.8, la versión del `.venv` del proyecto. Microsoft cambió el token `Sec-MS-GEC` y **rechazaba con un 403 todas las peticiones**: Elvira, Dalia, Ximena y Salomé fallaban igual. La 7.3.1 genera el token nuevo y con ella las cuatro funcionan (comprobado una a una).
+- El error **se tragaba en silencio** (`except Exception`): EDITH pasaba a la voz de Windows (SAPI5), y en esta laptop la única voz española instalada es *Microsoft Sabina (es-MX)*. Por eso todas las opciones sonaban idénticas. El aviso de Ajustes decía «sin conexión», aunque sí había internet.
+- No era la caché (cada audio lleva un nombre único), ni `set_voice`, ni la lectura de `EDITH_VOICE`: las tres cosas funcionaban.
+- A quién afectaba: a EDITH abierta desde el código (`.venv` del proyecto, que usan el lanzador de desarrollo y la EDITH de cada día). Según la tabla de la v0.0.9, `EDITH.exe` empaquetado se construyó con `build\.venv` y edge-tts 7.3.1.
+
+**Arreglo**
+- `requirements.txt` pide `edge-tts>=7.3.1` y el `.venv` del proyecto ya la tiene. **Hay que reiniciar la EDITH abierta**, porque conserva cargada la 7.2.8.
+- Si la voz neural falla, EDITH registra el motivo (`edith.voz` en el registro) y Ajustes lo muestra: «El servicio de voz de Microsoft rechazó la conexión (error 403)…», «tardó demasiado», «sin conexión»… Además avisa de que, sin la voz neural, todas las opciones suenan igual.
+- El respaldo SAPI5 elige la voz de Windows de la región de cada voz (es-ES, es-MX, es-CO) si está instalada. Con una sola voz española instalada, sin internet siguen sonando igual, y Ajustes lo dice.
+- El selector de voz de la barra lateral **ahora guarda la voz** en el `.env` (antes solo la cambiaba hasta reiniciar), y solo desde esta computadora. Las opciones salen de EDITH, así que una voz nueva aparece sola.
+
+Muestras reales generadas por la ruta de Ajustes (`/api/setup/voice/sample`), cada una con su voz neural:
+
+| Voz | Voz neural | Duración | Tono medio |
+|---|---|---|---|
+| Elvira | `es-ES-ElviraNeural` | 5,40 s | 193 Hz |
+| Dalia | `es-MX-DaliaNeural` | 5,33 s | 198 Hz |
+| Ximena | `es-ES-XimenaNeural` | 5,16 s | 208 Hz |
+| Salomé | `es-CO-SalomeNeural` | 5,11 s | 182 Hz |
+| Viernes | `en-US-AvaMultilingualNeural` | 4,25 s | 216 Hz |
+
+### 🎭 Voz «Viernes»
+Estilo de la asistente de Tony Stark (F.R.I.D.A.Y.): femenina, serena y precisa, con un leve acento. **Es un estilo de voz, no una imitación de la actriz.**
+- Edge no tiene voces británicas ni irlandesas que hablen español. Se probaron sintetizando una frase en español y transcribiéndola con Whisper:
+
+| Voz | Similitud con el texto |
+|---|---|
+| `en-IE-EmilyNeural` (irlandesa) | 0,16: lee el español con fonética inglesa, no se entiende |
+| `en-GB-SoniaNeural` (británica) | 0,17: igual |
+| Multilingües femeninas: Ava, Emma (EE. UU.), Vivienne (Francia), Seraphina (Alemania), Thalita (Brasil) | 0,96 (como Elvira) |
+
+- Elegida: **`en-US-AvaMultilingualNeural`** («cálida y clara»), a `-4%` de velocidad y `-3Hz` de tono. Habla español con un leve acento inglés: es lo más cerca del aire británico o irlandés que permite el motor. Whisper detecta español y transcribe la muestra casi palabra por palabra.
+- Sale en ⚙️ Ajustes › Voz, en el paso «Elige mi voz» del asistente (con ▶ Escuchar) y en la barra lateral. Sin internet usa la voz de Windows de España si está instalada.
+
+### 🎙️ «Oye EDITH»: qué fallaba
+1. **En la app de escritorio no funcionaba nunca.** Usaba el reconocimiento de voz del navegador (Web Speech API). Probado en una ventana WebView2 oculta: `SpeechRecognition` existe, abre el micrófono y a los 1,1 s falla con `network`. Tras 3 fallos se apagaba («sin servicio de voz»).
+2. En Chrome o Edge sí funcionaba, pero **enviaba a la nube todo lo que oía el micrófono**.
+3. **Falsos positivos por subcadena**: buscaba `"edit"` en el texto, así que saltaba con «editar», «Edita la foto», «la editorial», «Meredith», «le dije a Edith…». También con su propia voz: «Hola, soy EDITH» la despertaba, porque nada la silenciaba mientras hablaba.
+4. Según el código: actuaba sobre resultados provisionales. Con «Oye EDITH, abre la calculadora» podía enviar solo «abre» en cuanto aparecía la primera palabra tras el nombre.
+5. Según el código: tras «Oye EDITH» sin orden se quedaba escuchando **para siempre**. Lo siguiente que oyera (la tele, otra persona) se enviaba como orden, con el nombre dentro.
+6. `agent/voice/wake_word.py` existía, pero no lo usaba nadie.
+
+### 🎙️ «Oye EDITH»: cómo funciona ahora
+```mermaid
+graph LR
+    Mic["🎤 Micrófono (getUserMedia)"] --> W["AudioWorklet 16 kHz"]
+    W --> VAD["Detector de voz con ruido de fondo adaptativo"]
+    VAD -->|"tramo con voz (PCM)"| API["POST /api/voice/wake/listen"]
+    API --> Wh["Whisper base local + filtro Silero"]
+    Wh --> Reglas["Reglas: nombre al principio"]
+    Reglas -->|"«Oye EDITH, abre…»"| Chat["Orden al chat"]
+    Reglas -->|"«Oye EDITH»"| Escucha["🎙️ Te escucho… (8 s)"]
+```
+- **Todo en local**: el audio no sale de la computadora. Funciona igual en la app (WebView2 recuerda el permiso del micrófono) y en el navegador.
+- **Solo los tramos con voz** van a Whisper. Antes de que empiece la voz se guardan 0,3 s y el tramo termina tras 0,6 s de silencio (1 s al dictar la orden), con un máximo de 8 o 15 s. Se descartan los ruidos de menos de 0,3 s. El umbral se adapta al ruido de la habitación y depende de la sensibilidad.
+- **No se oye a sí misma**: mientras suena la voz de EDITH, y 0,7 s después, no se capta nada.
+- **Reglas** (`WakeWordDetector`): el nombre tiene que ir al principio de la frase, solo o tras un saludo (oye, hey, hola, buenos días, ¿qué hay?…). No cuentan las palabras parecidas (editar, edita, editorial, Meredith, crédito…). Tampoco cuenta el nombre si lo que sigue empieza con un artículo («EDITH, la foto…» era «Edita la foto…»).
+- **Pista para Whisper** (`Oye EDITH, hola EDITH.`): sin ella, Whisper escribe el nombre como «dit», «edic» o «Eddie» y **solo detectaba 26 de 64 llamadas**. Para que la pista no cree falsos positivos: si Whisper copia la pista en vez de la orden, EDITH se queda escuchando la orden, y un «EDITH» suelto con más de 1 s de voz (sin márgenes, según Silero) se descarta.
+- **Reinicio tras errores**: sin permiso de micrófono lo dice y se reintenta con el botón. Sin micrófono, o si se desconecta o está ocupado, reintenta con espera creciente (1 s → 30 s) y al enchufar uno. Si EDITH no responde, lo indica y sigue intentando. Si el modelo no está, muestra «Preparando…» mientras lo descarga. Si la política de audio del navegador lo bloquea, pide un clic.
+- **Pausar suelta el micrófono** (se apaga el indicador de Windows) y se recuerda. El botón 🎙️ dicta una orden aunque «Oye EDITH» esté en pausa o desactivado.
+- **Ajustes › Voz**: «Escuchar «Oye EDITH»», sensibilidad y modelo (`WAKE_WORD_ENABLED`, `WAKE_WORD_SENSITIVITY`, `WAKE_WORD_MODEL`). Los cambios se aplican sin recargar la página.
+
+| Sensibilidad | Qué hace |
+|---|---|
+| Baja | Solo el nombre a secas: «Oye EDITH», pitido y luego la orden. Sin formas dudosas del nombre |
+| Normal (recomendada) | Nombre + orden de un tirón; acepta cómo escribe Whisper el nombre («dit», «edic»…) |
+| Alta | Además acepta nombres peor oídos («Edet»), hasta 4 palabras de saludo delante |
+
+**Medido** con 184 frases sintetizadas por 8 voces de Edge (hombres y mujeres de España, México, Argentina, Colombia, Chile, Perú y EE. UU.), limpias y con ruido a 10 dB, por el mismo camino que la app (PCM → `WakeListener.listen`):
+
+| | Llamadas detectadas | Falsos positivos (120 frases que no la llaman) | La regla antigua, con el mismo texto |
+|---|---|---|---|
+| Normal, sin ruido | **59/64** | **3/120** | 53/120 |
+| Normal, con ruido | **59/64** | **9/120** | 43/120 |
+| Baja, sin ruido / con ruido | 23/24 y 21/24 (nombre a secas) | **0/120** y **0/120** | — |
+| Ruido sin voz | — | 0/20 | — |
+
+- Todos los falsos positivos que quedan vienen de dos frases que suenan casi igual que una llamada: «Hoy Edith no vino a trabajar» (Whisper oye «Oye EDITH, no vino…») y «Oye, edita ese párrafo». En la sensibilidad baja no se activan.
+- Latencia media por tramo en la CPU de esta laptop (Whisper base int8): **340–480 ms**; la primera, con el modelo recién cargado, ~1,2 s. Con la laptop muy cargada (1,7 GB de RAM libre y otras tareas pesadas) una pasada de las pruebas llegó a **24 s de media**: Whisper compite por CPU y memoria. Repetida sin esa carga, 483 ms.
+- Con Whisper base, «pon música» llega a veces como «con música», con o sin pista. Con `WAKE_WORD_MODEL=small` se entiende mejor, a cambio de más tiempo y 460 MB.
+
+### 🔧 Piezas técnicas
+| Archivo | Qué hace |
+|---|---|
+| `agent/voice/voice_engine.py` | Voz `viernes`, `last_error` y `describe_error()`; respaldo SAPI5 por región |
+| `agent/voice/wake_word.py` | `WakeWordDetector` (reglas y sensibilidad) y `WakeListener` (modelo en segundo plano, una transcripción a la vez, pista, Silero) |
+| `ide/voice_api.py` | `GET /api/voice/wake/status`, `POST /api/voice/wake/prepare` y `POST /api/voice/wake/listen` (token y Origin, como toda la API; máximo 15 s; 409 si está desactivado) |
+| `ide/static/wake-worklet.js` + `app.js` | Captura, detector de voz, modo «Te escucho…», reintentos; sin `SpeechRecognition` |
+| `ide/setup_api.py`, `ide/static/setup.js` | Motivo real en la muestra de voz; aplicar «Oye EDITH» sin reiniciar |
+| `ide/server.py` | El selector de la barra lateral guarda la voz |
+| `agent/config.py`, `agent/setup/settings.py`, `.env.example` | `WAKE_WORD_*` y la voz «Viernes» en Ajustes y en el asistente |
+| `requirements.txt` | `edge-tts>=7.3.1` |
+
+### 🧪 Pruebas
+- **`python tests/test_voz.py`: 67/67** (nuevo; necesita internet). Comprueba la versión de edge-tts, que cada voz use su voz neural (y exista en el catálogo de Microsoft) y que las cinco muestras sean audios distintos y suenen distinto (tono o duración). También que «Viernes» se entienda en español, el motivo cuando falla la voz neural (403 simulado), el respaldo SAPI5 y que la voz se guarde desde la barra lateral. De «Oye EDITH» prueba las reglas (8 llamadas y 10 frases que no la llaman), las rutas (token, Origin, 413, 409, ocupado) y el audio real: 4 voces × 10 frases, con y sin ruido, con al menos un 85 % de detección y ningún falso positivo (sale 15/16 y 16/16, 0/24 y 0/24; la regla antigua, con el mismo texto, 16–17/24 y 9/24), y que la media no pase de 1,5 s por tramo (483 ms). Una de las pasadas falló solo en esto (24 s de media con la laptop sin RAM libre); repetida, 67/67.
+- Siguen pasando: `test_fase_15_3.py` **48/48**, `test_fase_15_2.py` **65/65**, `test_seguridad.py` **78/78** y `test_fases_9_11.py` **55/55**.
+- **Interfaz real en el navegador integrado**, con un servidor aislado (`EDITH_HOME` temporal) y un micrófono simulado que reproducía grabaciones con ruido de fondo:
+  - «Hola, soy EDITH. ¿En qué te puedo ayudar?» y «Voy a editar el documento» → nada.
+  - «Oye EDITH, abre la calculadora» → envía «abre la calculadora» al chat.
+  - «Oye EDITH» → «🎙️ Te escucho…» → la frase siguiente va al chat y vuelve a «activo».
+  - Una llamada tapada por la voz de EDITH → nada.
+  - Pausar → suelta el micrófono.
+  - El botón 🎙️ con «Oye EDITH» en pausa dicta una orden y suelta el micrófono.
+  - Sin permiso de micrófono → «sin permiso», sin bucle de reintentos.
+  - En el asistente aparece «Viernes» y su ▶ Escuchar da audio neural.
+- No se tocaron tus datos ni tu EDITH abierta: todo con `EDITH_HOME` temporales.
+
+### 📌 Pendiente
+- **Reiniciar la EDITH abierta** para que cargue edge-tts 7.3.1. **Reconstruir `EDITH.exe`** (`build\build_setup.ps1`) para llevar «Oye EDITH» y «Viernes» a la app empaquetada.
+- Si «Oye EDITH» se activa con la ventana oculta en la bandeja, la orden llega al chat pero la ventana no se muestra.
+- Fase 3: captura nativa del micrófono en Python (sin WebView2). Hoy depende del permiso de micrófono de WebView2, que la app recuerda.
+- Probar con la voz real de Diego y su micrófono (las medidas son con voces sintetizadas) y ajustar la sensibilidad si hace falta.
+
+---
+
 ## v0.0.9 — 16/10/2026 · EDITH empaquetada, sin el proyecto ni el .venv (Fase 15.3)
 Commits `b2ee9eb` (empaquetado) y `1c95838` (enlace para otro dispositivo), en `main` encima de la v0.0.8 (`8ce8d38`). Tercera entrega de la Fase 15: **EDITH ya es un programa de verdad**. `dist\EDITH\EDITH.exe` arranca sin la carpeta del proyecto, sin el `.venv` y sin tener Python instalado, y WhatsApp funciona sin instalar Node. Diseño: [[Diseño de EDITH Setup (Aplicación de Escritorio)]].
 

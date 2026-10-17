@@ -6,8 +6,8 @@ tags:
   - dashboard
   - home
 created: 2026-10-15
-updated: 2026-10-16
-version: 0.0.9
+updated: 2026-10-17
+version: 0.0.10
 ---
 
 # 🎛️ Centro de Mando: E.D.I.T.H.
@@ -34,18 +34,18 @@ Bienvenido a tu centro de control en **Obsidian**. Desde aquí puedes monitorear
 
 ---
 
-## ⚡ Estado Actual del Sistema (v0.0.9)
+## ⚡ Estado Actual del Sistema (v0.0.10)
 
 ```mermaid
 pie title Distribución de Capacidades
     "Completadas (Fases 1, 2, 4, 7, 9, 10, 11)" : 7
     "En configuración (Fase 8)" : 1
-    "En marcha (Fases 14 y 15)" : 2
-    "Planificadas (Fases 3, 5, 6, 12, 13)" : 5
+    "En marcha (Fases 3, 14 y 15)" : 3
+    "Planificadas (Fases 5, 6, 12, 13)" : 4
 ```
 
 - **Motor IA**: `qwen3:4b-instruct` (modo rápido ~1 s) / `qwen3:4b Thinking` (modo profundo).
-- **Voz**: Neural `edge-tts` (Elvira, Dalia, Ximena, Salomé) + SAPI5 offline de respaldo.
+- **Voz**: Neural `edge-tts` (Elvira, Dalia, Ximena, Salomé y «Viernes») + SAPI5 offline de respaldo. «Oye EDITH» con Whisper local (v0.0.10).
 - **Sentidos**: Screen Vision (captura completa y ventana) + LaTeX KaTeX + Highlight.js.
 - **Almacenamiento**: Bóveda Obsidian `EDITH_p` con auto-sync en tiempo real.
 - **Canales (v0.0.5)**: WhatsApp con notas de voz, llamadas Twilio (falta URL pública) y Heartbeat con recordatorios, alarmas y resumen matutino.

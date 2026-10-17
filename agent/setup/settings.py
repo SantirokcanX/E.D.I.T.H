@@ -26,7 +26,8 @@ RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 MASK = "••••••••"
 
 VOICE_CHOICES = [("elvira", "Elvira (cálida, España)"), ("dalia", "Dalia (serena, México)"),
-                 ("ximena", "Ximena (espontánea, España)"), ("salome", "Salomé (empática, Colombia)")]
+                 ("ximena", "Ximena (espontánea, España)"), ("salome", "Salomé (empática, Colombia)"),
+                 ("viernes", "Viernes (serena y precisa, acento inglés suave)")]
 
 # type: text | secret | bool | select | number | time | timerange | phones | phone | url | folder | multi | model | voice
 SCHEMA: List[Dict[str, Any]] = [
@@ -53,7 +54,17 @@ SCHEMA: List[Dict[str, Any]] = [
     ]},
     {"id": "voz", "title": "Voz", "icon": "🔊", "fields": [
         {"key": "EDITH_VOICE", "label": "Voz de EDITH", "type": "voice", "options": VOICE_CHOICES},
-        {"key": "VOICE_OFFLINE_FALLBACK", "label": "Usar la voz de Windows si no hay internet", "type": "bool"},
+        {"key": "VOICE_OFFLINE_FALLBACK", "label": "Usar la voz de Windows si no hay internet", "type": "bool",
+         "help": "Sin internet todas las voces suenan con la misma voz de Windows."},
+        {"key": "WAKE_WORD_ENABLED", "label": "Escuchar «Oye EDITH»", "type": "bool",
+         "help": "El micrófono se transcribe en esta computadora (Whisper): el audio no sale a internet."},
+        {"key": "WAKE_WORD_SENSITIVITY", "label": "Sensibilidad de «Oye EDITH»", "type": "select",
+         "options": [["baja", "Baja: di «Oye EDITH», espera el pitido y luego la orden"],
+                     ["normal", "Normal (recomendada)"],
+                     ["alta", "Alta: micrófono lejano o voz baja"]]},
+        {"key": "WAKE_WORD_MODEL", "label": "Modelo para «Oye EDITH»", "type": "select",
+         "options": [["tiny", "Rápido (75 MB, menos preciso)"], ["base", "Equilibrado (recomendado, 145 MB)"],
+                     ["small", "Preciso (460 MB, más lento)"]]},
     ]},
     {"id": "canales", "title": "WhatsApp y teléfono", "icon": "📱", "fields": [
         {"key": "AUTHORIZED_PHONE_NUMBERS", "label": "Números autorizados", "type": "phones",

@@ -18,7 +18,7 @@ status: en-desarrollo
 # 👓 Plan Maestro y Hoja de Ruta: E.D.I.T.H.
 
 > [!info] Estado del Sistema
-> **E.D.I.T.H.** (Enhanced Dialectical Intelligence & Tactical Heuristics) está en la versión **0.0.9**: ya habla por **WhatsApp (texto y notas de voz)**, contesta y hace **llamadas telefónicas** (Twilio) y tiene **iniciativa propia** (recordatorios, alarmas que escalan a llamada, salud de la laptop, tareas de Obsidian y resumen matutino). Todo sobre su motor dual Qwen3 (100 % GPU, ~1 s), LaTeX, visión de pantalla y Obsidian. Desde la **v0.0.6** es una app de escritorio y la **v0.0.7** protege la interfaz y la API con token y pide tu permiso antes de ejecutar comandos. La **v0.0.8** se configura sola la primera vez (asistente que mira tu GPU y descarga los modelos) y todo se cambia en ⚙️ Ajustes, sin editar `.env`. Desde la **v0.0.9** se empaqueta como `EDITH.exe`, que funciona sin la carpeta del proyecto ni Python, con WhatsApp incluido sin necesidad de Node.
+> **E.D.I.T.H.** (Enhanced Dialectical Intelligence & Tactical Heuristics) está en la versión **0.0.10**: ya habla por **WhatsApp (texto y notas de voz)**, contesta y hace **llamadas telefónicas** (Twilio) y tiene **iniciativa propia** (recordatorios, alarmas que escalan a llamada, salud de la laptop, tareas de Obsidian y resumen matutino). Todo sobre su motor dual Qwen3 (100 % GPU, ~1 s), LaTeX, visión de pantalla y Obsidian. Desde la **v0.0.6** es una app de escritorio y la **v0.0.7** protege la interfaz y la API con token y pide tu permiso antes de ejecutar comandos. La **v0.0.8** se configura sola la primera vez (asistente que mira tu GPU y descarga los modelos) y todo se cambia en ⚙️ Ajustes, sin editar `.env`. Desde la **v0.0.9** se empaqueta como `EDITH.exe`, que funciona sin la carpeta del proyecto ni Python, con WhatsApp incluido sin necesidad de Node. En la **v0.0.10** cada voz vuelve a sonar distinta, llega la voz **«Viernes»** y **«Oye EDITH»** funciona dentro de la app, transcrito en local con Whisper.
 >
 > Pendiente inmediato: **Fase 8** (servidor 24/7 + URL pública), que es lo que permite que Twilio llegue a EDITH y que WhatsApp funcione con la laptop cerrada. Su requisito de seguridad (Fase 14) ya está listo en v0.0.7.
 >
@@ -82,7 +82,7 @@ graph TD
 ### ✅ 3. Sentidos Visuales & Expresión
 - [x] **Screen Vision** (`agent/tools/screen_tools.py`): captura completa y de ventana activa.
 - [x] Identificación automática del programa activo.
-- [x] Voz neural con 4 personalidades seleccionables.
+- [x] Voz neural con 5 personalidades seleccionables (Elvira, Dalia, Ximena, Salomé y, desde la v0.0.10, «Viernes»).
 - [x] Diagramas conceptuales renderizados en vivo.
 - [x] 🆕 Las herramientas `capture_screen` / `analyze_screen` ya se ejecutan de verdad (antes el agente las anunciaba pero respondía "herramienta desconocida").
 
@@ -117,7 +117,7 @@ timeline
     title Calendario de Evolución Táctica de EDITH
     Fase 1 : Visión de Pantalla (Completado)
     Fase 2 : Integración Nativa con Obsidian (Completado)
-    Fase 3 : Micrófono Nativo en Python (Pendiente)
+    Fase 3 : Oye EDITH con Whisper local (v0.0.10) y micrófono nativo (Pendiente)
     Fase 4 : Voz 100% Offline SAPI5 (Completado)
     Fase 5 : Portapapeles (Completado) y Automatización de teclado (Pendiente)
     Fase 6 : Atajo Global de Teclado y Toasts (Casi completa)
@@ -148,12 +148,20 @@ timeline
 - [x] Ruta de la bóveda configurable con `OBSIDIAN_VAULT_PATH`.
 - [ ] Guardar `workspace/notas_del_dia.md` y los diagramas directamente en la bóveda.
 
-### 🎙️ Fase 3: Micrófono Nativo en Python (Hot-Mic)
-- [ ] Captura directa de hardware con `speech_recognition` o capturador nativo.
-- [ ] Activación continua diciendo *"Oye EDITH"* sin depender de los permisos de WebView2.
+### 🟡 Fase 3: Micrófono Nativo y «Oye EDITH» (Hot-Mic) — v0.0.10
+> [!success] «Oye EDITH» funciona en la app (v0.0.10)
+> Antes usaba el reconocimiento del navegador, que en WebView2 falla con `network` al segundo de arrancar, y se activaba con «editar» o con la propia voz de EDITH. Ahora la interfaz capta el micrófono y EDITH lo transcribe en local con Whisper. Medido con 184 frases: 59/64 llamadas detectadas, con y sin ruido; falsos positivos 3/120 (la regla antigua, 53/120). Detalle: [[Registro de Cambios de EDITH#v0.0.10 — 17/10/2026 · Voces que suenan distinto, voz «Viernes» y «Oye EDITH» con Whisper local]].
+
+- [x] Activación continua diciendo *"Oye EDITH"* en la app de escritorio y en el navegador, **sin servicios en la nube** (Whisper local + filtro Silero).
+- [x] Orden en la misma frase («Oye EDITH, abre la calculadora») o en dos pasos (pitido → «Te escucho…» durante 8 s).
+- [x] No se activa con palabras parecidas («editar», «Meredith») ni con su propia voz; tres sensibilidades en ⚙️ Ajustes › Voz.
+- [x] Reintentos solos si el micrófono falta, se desconecta o está ocupado; pausar suelta el micrófono.
+- [ ] Captura directa del micrófono en Python, sin pasar por WebView2 (hoy depende de su permiso, que la app recuerda).
+- [ ] Mostrar la ventana si «Oye EDITH» se activa con la app oculta en la bandeja.
 
 ### ✅ Fase 4: Voz 100% Offline (Fallback SAPI5)
 - [x] Si `edge-tts` falla o no hay internet (espera máx. 20 s), EDITH habla con la voz de Windows (SAPI5, prefiere voz en español) → nunca se queda muda. Se controla con `VOICE_OFFLINE_FALLBACK`.
+- [x] Desde la v0.0.10 dice **por qué** falló la voz neural (p. ej. el 403 de edge-tts 7.2.8, que hacía sonar igual todas las voces) y usa la voz de Windows de la región de cada voz si está instalada.
 
 ### 🟡 Fase 5: Portapapeles & Control de Laptop (*Computer Use*)
 - [x] `read_clipboard`: *"EDITH, explica lo que acabo de copiar"*.
