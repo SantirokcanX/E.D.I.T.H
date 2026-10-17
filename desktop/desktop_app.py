@@ -157,6 +157,11 @@ class DesktopApi:
         result = self._app.window.create_file_dialog(webview.FileDialog.FOLDER, directory=start)
         return result[0] if result else None
 
+    def show_window(self):
+        """«Oye EDITH» con la app oculta en la bandeja: mostrar la ventana para ver la respuesta."""
+        self._app.show()
+        return True
+
     def open_url(self, url: str):
         if isinstance(url, str) and url.startswith(("https://", "http://")):
             import webbrowser
@@ -403,8 +408,30 @@ class DesktopApp:
         self.shutdown()
 
 
+def run_python_script(args) -> int:
+    """EDITH.exe --run-python script.py salida.txt errores.txt (Fase 7: ▶ Ejecutar en la app empaquetada).
+    Usa el intérprete que trae EDITH.exe; la salida va a archivos porque EDITH.exe no tiene consola."""
+    import runpy
+    import traceback
+    script, out, err = (args + ["", "", ""])[:3]
+    with open(out or os.devnull, "w", encoding="utf-8") as o, open(err or os.devnull, "w", encoding="utf-8") as e:
+        sys.stdout, sys.stderr = o, e
+        sys.argv = [script]
+        try:
+            runpy.run_path(script, run_name="__main__")
+            return 0
+        except SystemExit as ex:
+            return ex.code if isinstance(ex.code, int) else 0
+        except BaseException:
+            traceback.print_exc()
+            return 1
+
+
 def main():
     multiprocessing.freeze_support()  # EDITH.exe: los procesos hijos de multiprocessing no relanzan la app
+    if "--run-python" in sys.argv[1:]:
+        i = sys.argv.index("--run-python")
+        sys.exit(run_python_script(sys.argv[i + 1:]))
     if "--access-link" in sys.argv[1:]:
         sys.exit(show_access_links())  # antes del registro: la salida va a la terminal, no al log
     setup_logging()

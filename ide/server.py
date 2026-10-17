@@ -32,6 +32,7 @@ from agent import ratelimit
 from ide.auth import AccessGuard, access_link_hint
 from ide.channels_api import router as channels_router, start_channels, stop_channels
 from ide.setup_api import router as setup_router, same_origin
+from ide.code_api import router as code_router
 from ide.voice_api import router as voice_router
 from agent.setup import settings as setup_settings
 
@@ -44,6 +45,16 @@ except Exception:  # pragma: no cover
 app = FastAPI(title="EDITH Studio IDE & Companion Hub", version=VERSION)
 
 
+def content_security_policy(host: str) -> str:
+    """Fase 14: solo código de la propia EDITH (librerías en vendor/, sin CDN ni scripts en línea).
+    Los estilos en línea siguen permitidos: KaTeX y Mermaid los usan para dibujar fórmulas y diagramas."""
+    ws = f" ws://{host} wss://{host}" if host and all(c.isalnum() or c in ".-:[]" for c in host) else ""
+    return ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' blob: data:; "
+            f"connect-src 'self'{ws}; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; "
+            "form-action 'self'; frame-ancestors 'none'")
+
+
 @app.middleware("http")
 async def revalidate_static(request, call_next):
     """La interfaz se revalida siempre (ETag): tras actualizar EDITH no se queda un app.js viejo en caché."""
@@ -52,7 +63,7 @@ async def revalidate_static(request, call_next):
         response.headers["Cache-Control"] = "no-cache"
     # Nadie puede incrustar EDITH en un iframe (p. ej. para engañar al usuario con el botón "Autorizar")
     response.headers["X-Frame-Options"] = "DENY"
-    response.headers["Content-Security-Policy"] = "frame-ancestors 'none'"
+    response.headers["Content-Security-Policy"] = content_security_policy(request.headers.get("host", ""))
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "same-origin"
     return response
@@ -612,6 +623,7 @@ def index_page():
 
 
 app.include_router(channels_router)
+app.include_router(code_router)  # Fase 7: ▶ Ejecutar (Python, con confirmación)
 app.include_router(setup_router)  # Fase 15.2: asistente de primer arranque y Ajustes
 app.include_router(voice_router)  # «Oye EDITH» con Whisper local
 app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")

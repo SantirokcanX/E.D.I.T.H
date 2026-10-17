@@ -1,2 +1,4 @@
 # Notas de la bóveda de Obsidian con LF, igual que las escribe Obsidian
 EDITH_p/**/*.md text eol=lf
+# Librerías en copia local: tal cual, sin convertir finales de línea (su huella está en MANIFEST.json)
+ide/static/vendor/** -text

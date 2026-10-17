@@ -555,6 +555,29 @@ select, textarea, input { font-family: var(--font-main); color: inherit; }
   cursor: pointer;
 }
 .code-actions button:hover { color: var(--text); border-color: var(--border); background: var(--bg-hover); }
+.code-actions button:disabled { opacity: 0.5; cursor: wait; }
+.code-actions button[data-act="run"] { color: var(--accent); }
+
+/* Fase 7: una línea por <span>, números de línea y ajuste de líneas largas */
+.msg-body .code-block .code-line { display: block; min-height: 1.2em; }
+.msg-body .code-block.show-lines pre { counter-reset: edith-line; }
+.msg-body .code-block.show-lines .code-line::before {
+  counter-increment: edith-line;
+  content: counter(edith-line);
+  display: inline-block;
+  width: 2.4em;
+  margin-right: 1em;
+  text-align: right;
+  color: var(--text-muted);
+  user-select: none;
+}
+.msg-body .code-block.wrap pre { white-space: pre-wrap; word-break: break-word; overflow-x: hidden; }
+.msg-body .code-block.wrap.show-lines .code-line { padding-left: 3.4em; text-indent: -3.4em; }
+.code-output { border-top: 1px solid var(--border); padding: 8px 12px; font-size: 12.5px; }
+.code-output-status { color: var(--text-secondary); margin-bottom: 4px; }
+.code-output pre { margin: 4px 0 0; max-height: 320px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+  font-family: var(--font-code); background: none; border: none; padding: 0; }
+.code-output .code-stderr { color: var(--danger); }
 
 /* Fórmulas LaTeX (KaTeX) */
 .msg-body .math-block {

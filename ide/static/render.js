@@ -69,6 +69,8 @@ const EdithRender = (() => {
   const MATH_RES = [
     { re: /\$\$([\s\S]+?)\$\$/g, display: true },
     { re: /\\\[([\s\S]+?)\\\]/g, display: true },
+    // Entornos de LaTeX sueltos (equation, align, gather...): después de $$ y \[ para no partirlos
+    { re: /(\\begin\{(equation\*?|align\*?|gather\*?|multline\*?)\}[\s\S]+?\\end\{\2\})/g, display: true },
     { re: /\\\(([\s\S]+?)\\\)/g, display: false },
     // $...$ en línea: sin espacio tras la apertura ni antes del cierre, y sin dígito pegado
     // después del cierre (así "cuesta $5 y $10" no se toma como fórmula).
@@ -113,11 +115,42 @@ const EdithRender = (() => {
     return html.replace(/EDITHMATH(\d+)X/g, (m, i) => store[+i] ?? m);
   }
 
+  // Ecuaciones numeradas (Fase 7), como en LaTeX: una ecuación en bloque con \label{…} o un entorno
+  // equation/align/gather sin asterisco recibe un número (\tag{n}); \eqref{…} y \ref{…} lo citan.
+  const DISPLAY_RE = /(\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\begin\{(equation\*?|align\*?|gather\*?|multline\*?)\}[\s\S]+?\\end\{\2\})/g;
+  const NUMBERED_ENV = /\\begin\{(equation|align|gather|multline)\}/;
+
+  function numberEquations(text) {
+    const parts = text.split(CODE_RE);
+    const labels = {};
+    let n = 0;
+    for (let i = 0; i < parts.length; i += 2) {
+      parts[i] = parts[i].replace(DISPLAY_RE, (block) => {
+        const label = block.match(/\\label\{([^}]+)\}/);
+        if (!label && !NUMBERED_ENV.test(block)) return block;
+        let out = block.replace(/\\label\{[^}]+\}/g, "");
+        if (/\\tag\{/.test(out)) return out;  // número puesto a mano
+        n += 1;
+        if (label) labels[label[1].trim()] = n;
+        if (out.startsWith("$$")) return out.slice(0, -2) + ` \\tag{${n}}$$`;
+        if (out.startsWith("\\[")) return out.slice(0, -2) + ` \\tag{${n}}\\]`;
+        return out.replace(/\\end\{([a-z]+)\}$/, ` \\tag{${n}}\\end{$1}`);
+      });
+    }
+    for (let i = 0; i < parts.length; i += 2) {
+      parts[i] = parts[i].replace(/\\(eq)?ref\{([^}]+)\}/g, (m, eq, key) => {
+        const num = labels[key.trim()] ?? "??";
+        return eq ? `(${num})` : String(num);
+      });
+    }
+    return parts.join("");
+  }
+
   /** Markdown + LaTeX → HTML saneado. */
   function toHtml(markdown) {
     if (!window.marked || !setupPurify()) return plainHtml(markdown);
     const store = [];
-    const protectedText = protectMath(markdown || "", store);
+    const protectedText = protectMath(numberEquations(markdown || ""), store);
     return sanitize(restoreMath(marked.parse(protectedText), store));
   }
 
@@ -139,13 +172,23 @@ const EdithRender = (() => {
         } catch (e) {}
       }
 
+      const source = code.textContent;  // el texto original: lo usan Copiar, Guardar y Ejecutar
+      const shownLang = lang || code.result?.language || "";
+      splitLines(code);
+
       const wrapper = document.createElement("div");
       wrapper.className = "code-block";
+      wrapper.classList.toggle("show-lines", codePrefs.lines);
+      wrapper.classList.toggle("wrap", codePrefs.wrap);
+      const runnable = PYTHON_LANGS.has(shownLang) && isLocalPage();
       const header = document.createElement("div");
       header.className = "code-header";
       header.innerHTML = `
-        <span class="code-lang">${escapeAttr(lang || code.result?.language || "código")}</span>
+        <span class="code-lang">${escapeAttr(shownLang || "código")}</span>
         <span class="code-actions">
+          ${runnable ? '<button type="button" data-act="run" title="Ejecutar en tu laptop (te pide confirmación)">▶ Ejecutar</button>' : ""}
+          <button type="button" data-act="lines" title="Mostrar u ocultar números de línea">#</button>
+          <button type="button" data-act="wrap" title="Ajustar las líneas largas">↩</button>
           <button type="button" data-act="save" title="Guardar en el workspace">💾 Guardar</button>
           <button type="button" data-act="copy" title="Copiar al portapapeles">📋 Copiar</button>
         </span>`;
@@ -153,8 +196,15 @@ const EdithRender = (() => {
       wrapper.append(header, pre);
 
       header.querySelector('[data-act="copy"]').addEventListener("click", (e) => {
-        copyText(code.innerText, e.currentTarget, "✓ Copiado");
+        copyText(source, e.currentTarget, "✓ Copiado");
       });
+      for (const pref of ["lines", "wrap"]) {
+        header.querySelector(`[data-act="${pref}"]`).addEventListener("click", () => {
+          codePrefs[pref] = wrapper.classList.toggle(pref === "lines" ? "show-lines" : "wrap");
+          saveCodePrefs();  // la próxima vez los bloques nuevos salen igual
+        });
+      }
+      header.querySelector('[data-act="run"]')?.addEventListener("click", (e) => runPython(source, wrapper, e.currentTarget));
       header.querySelector('[data-act="save"]').addEventListener("click", async (e) => {
         const ext = { python: "py", py: "py", javascript: "js", js: "js", typescript: "ts", html: "html", css: "css",
                       json: "json", bash: "sh", shell: "sh", powershell: "ps1", sql: "sql", java: "java",
@@ -166,7 +216,7 @@ const EdithRender = (() => {
           const res = await fetch("/api/workspace/file", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ filename: name, content: code.innerText }),
+            body: JSON.stringify({ filename: name, content: source }),
           });
           flash(btn, res.ok ? "✓ Guardado" : "✗ Error");
           if (res.ok && typeof loadWorkspaceFiles === "function") loadWorkspaceFiles();
@@ -182,6 +232,114 @@ const EdithRender = (() => {
       el.dataset.bound = "1";
       el.addEventListener("dblclick", () => copyText(el.dataset.latex, el, null));
     });
+  }
+
+  // ---- Fase 7: números de línea, ajuste de líneas y ▶ Ejecutar (Python) ----
+  const PYTHON_LANGS = new Set(["python", "py", "python3"]);
+  const codePrefs = { lines: false, wrap: false };
+  try { Object.assign(codePrefs, JSON.parse(localStorage.getItem("edith.code") || "{}")); } catch (e) {}
+  function saveCodePrefs() {
+    try { localStorage.setItem("edith.code", JSON.stringify(codePrefs)); } catch (e) {}
+  }
+
+  function isLocalPage() {  // el servidor solo ejecuta código pedido desde esta computadora
+    return ["127.0.0.1", "localhost", "[::1]"].includes(location.hostname);
+  }
+
+  /** Una <span class="code-line"> por línea, sin romper el resaltado: las <span> de highlight.js que
+   *  cruzan saltos de línea (cadenas o comentarios largos) se cierran y se vuelven a abrir. */
+  function splitLines(code) {
+    const lines = [];
+    const open = [];
+    let line = "";
+    const re = /(<span[^>]*>)|(<\/span>)|(\n)|([^<\n]+|<)/g;
+    let m;
+    while ((m = re.exec(code.innerHTML))) {
+      if (m[1]) { open.push(m[1]); line += m[1]; }
+      else if (m[2]) { open.pop(); line += m[2]; }
+      else if (m[3]) { lines.push(line + "</span>".repeat(open.length)); line = open.join(""); }
+      else line += m[4];
+    }
+    if (line.replace(/<[^>]+>/g, "") !== "" || !lines.length) lines.push(line + "</span>".repeat(open.length));
+    code.innerHTML = lines.map((l) => `<span class="code-line">${l.replace(/<[^>]+>/g, "") ? l : l + " "}</span>`).join("");
+  }
+
+  function confirmRun(source) {
+    return new Promise((resolve) => {
+      const backdrop = document.createElement("div");
+      backdrop.className = "confirm-backdrop";
+      const box = document.createElement("div");
+      box.className = "confirm-modal";
+      box.setAttribute("role", "dialog");
+      const title = document.createElement("div");
+      title.className = "confirm-title";
+      title.textContent = "¿Ejecutar este código Python en tu laptop?";
+      const pre = document.createElement("pre");
+      pre.className = "confirm-command";
+      pre.textContent = source;  // textContent: se muestra tal cual, sin interpretarlo
+      const reason = document.createElement("div");
+      reason.className = "confirm-reason";
+      reason.textContent = "Se ejecuta con tus permisos (no es un entorno aislado), en workspace/ejecuciones y "
+        + "durante 30 s como máximo. Ejecútalo solo si entiendes lo que hace.";
+      const actions = document.createElement("div");
+      actions.className = "confirm-actions";
+      const deny = document.createElement("button");
+      deny.type = "button";
+      deny.className = "btn-deny";
+      deny.textContent = "Cancelar";
+      const allow = document.createElement("button");
+      allow.type = "button";
+      allow.className = "btn-allow";
+      allow.textContent = "▶ Ejecutar";
+      actions.append(deny, allow);
+      box.append(title, pre, reason, actions);
+      backdrop.append(box);
+      document.body.append(backdrop);
+      const done = (ok) => { backdrop.remove(); document.removeEventListener("keydown", onKey); resolve(ok); };
+      const onKey = (e) => { if (e.key === "Escape") done(false); };
+      document.addEventListener("keydown", onKey);
+      deny.addEventListener("click", () => done(false));
+      allow.addEventListener("click", () => done(true));
+      deny.focus();  // un Enter por accidente cancela
+    });
+  }
+
+  async function runPython(source, wrapper, btn) {
+    if (!(await confirmRun(source))) return;
+    let panel = wrapper.querySelector(".code-output");
+    if (!panel) {
+      panel = document.createElement("div");
+      panel.className = "code-output";
+      wrapper.append(panel);
+    }
+    panel.replaceChildren(Object.assign(document.createElement("div"), { className: "code-output-status", textContent: "⏳ Ejecutando…" }));
+    btn.disabled = true;
+    try {
+      const res = await fetch("/api/code/run", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: source, language: "python" }),
+      });
+      const data = await res.json().catch(() => ({}));
+      const status = panel.firstChild;
+      if (!res.ok) {
+        status.textContent = `✗ ${typeof data.detail === "string" ? data.detail : "No se pudo ejecutar (HTTP " + res.status + ")."}`;
+        return;
+      }
+      status.textContent = data.timed_out ? `⌛ Se detuvo a los 30 s.`
+        : data.exit_code === 0 ? `✓ Terminó en ${data.seconds} s.` : `✗ Terminó con código ${data.exit_code} (${data.seconds} s).`;
+      for (const [text, cls] of [[data.stdout, "code-stdout"], [data.stderr, "code-stderr"]]) {
+        if (!text) continue;
+        const out = document.createElement("pre");
+        out.className = cls;
+        out.textContent = text;
+        panel.append(out);
+      }
+      if (!data.stdout && !data.stderr) status.textContent += " (sin salida)";
+    } catch (e) {
+      panel.firstChild.textContent = "✗ No hay conexión con EDITH.";
+    } finally {
+      btn.disabled = false;
+    }
   }
 
   function flash(btn, label) {

@@ -368,6 +368,8 @@ async function sendWakeSegment(buffer) {
 
 function onWakeDetected(command) {
   playActivationPing();
+  // App de escritorio oculta en la bandeja: mostrar la ventana para que veas la respuesta
+  if (document.hidden) { try { window.pywebview?.api?.show_window?.(); } catch (e) {} }
   if (command && command.replace(/[^\p{L}\p{N}]/gu, "").length > 2) return submitVoiceCommand(command);
   enterCommandMode();  // solo dijo «Oye EDITH»: esperar la orden
 }
@@ -1277,6 +1279,10 @@ function setupMlListeners() {
 function setupEventListeners() {
   const form = document.getElementById("chatForm");
   const input = document.getElementById("promptInput");
+
+  // Botones del panel Laptop (antes con onclick en línea; la CSP estricta no los permite)
+  document.querySelectorAll("[data-app]").forEach((b) => b.addEventListener("click", () => launchApp(b.dataset.app)));
+  document.querySelectorAll("[data-vol]").forEach((b) => b.addEventListener("click", () => adjustVolume(b.dataset.vol)));
 
   form.addEventListener("submit", (e) => {
     e.preventDefault();

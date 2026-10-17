@@ -6,25 +6,21 @@
   <title>EDITH</title>
   <link rel="icon" type="image/png" href="logo.png" />
   <link rel="stylesheet" href="styles.css?v={{EDITH_VERSION}}" />
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <!-- Markdown parser -->
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <!-- DOMPurify (Fase 14): sanea el HTML de cada respuesta antes de mostrarla. Versión fija + SRI. -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.4.16/purify.min.js"
-          integrity="sha512-flQmhkXNRQ3iUfvtdCobtpMjCb6kE+zLnTiAulAQJ3WykVfy84JvCMOo6vhwWXHTXjR25h9Zj+LyGFRWKjRoag=="
-          crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-  <!-- KaTeX: fórmulas matemáticas en LaTeX -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
-  <!-- highlight.js: resaltado de sintaxis en bloques de código -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-  <!-- Mermaid.js para diagramas y mapas conceptuales -->
-  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
-  <!-- Chart.js para gráficas de datos -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Librerías en copia local (vendor/, versiones fijas y huella verificada: build/vendor_libs.py).
+       Funcionan sin internet y permiten la Content-Security-Policy estricta (Fase 14). -->
+  <link rel="stylesheet" href="vendor/fonts/fonts.css">
+  <!-- Markdown: marked 15.0.12 · DOMPurify 3.4.16 sanea el HTML de cada respuesta antes de mostrarla -->
+  <script src="vendor/marked/marked.min.js"></script>
+  <script src="vendor/dompurify/purify.min.js"></script>
+  <!-- KaTeX 0.16.11: fórmulas matemáticas en LaTeX -->
+  <link rel="stylesheet" href="vendor/katex/katex.min.css">
+  <script src="vendor/katex/katex.min.js"></script>
+  <!-- highlight.js 11.9.0: resaltado de sintaxis en bloques de código -->
+  <link rel="stylesheet" href="vendor/highlight/github-dark.min.css">
+  <script src="vendor/highlight/highlight.min.js"></script>
+  <!-- Mermaid 10.9.8: diagramas y mapas conceptuales · Chart.js 4.5.1: gráficas -->
+  <script src="vendor/mermaid/mermaid.min.js"></script>
+  <script src="vendor/chart/chart.umd.min.js"></script>
 </head>
 <body>
   <div class="app">
@@ -203,20 +199,20 @@ mindmap
             <div class="quick-apps">
               <span class="section-title">Lanzar aplicaciones</span>
               <div class="apps-grid">
-                <button class="btn-app" onclick="launchApp('chrome')">🌐 Chrome</button>
-                <button class="btn-app" onclick="launchApp('calc')">🔢 Calculadora</button>
-                <button class="btn-app" onclick="launchApp('notepad')">📝 Bloc de notas</button>
-                <button class="btn-app" onclick="launchApp('spotify')">🎵 Spotify</button>
-                <button class="btn-app" onclick="launchApp('explorer')">📂 Archivos</button>
-                <button class="btn-app" onclick="launchApp('vscode')">💻 VS Code</button>
+                <button class="btn-app" data-app="chrome">🌐 Chrome</button>
+                <button class="btn-app" data-app="calc">🔢 Calculadora</button>
+                <button class="btn-app" data-app="notepad">📝 Bloc de notas</button>
+                <button class="btn-app" data-app="spotify">🎵 Spotify</button>
+                <button class="btn-app" data-app="explorer">📂 Archivos</button>
+                <button class="btn-app" data-app="vscode">💻 VS Code</button>
               </div>
             </div>
             <div class="volume-control-box">
               <span class="section-title">Volumen</span>
               <div class="volume-buttons">
-                <button class="btn-vol" onclick="adjustVolume('up')">🔊 Subir</button>
-                <button class="btn-vol" onclick="adjustVolume('down')">🔉 Bajar</button>
-                <button class="btn-vol" onclick="adjustVolume('mute')">🔇 Silenciar</button>
+                <button class="btn-vol" data-vol="up">🔊 Subir</button>
+                <button class="btn-vol" data-vol="down">🔉 Bajar</button>
+                <button class="btn-vol" data-vol="mute">🔇 Silenciar</button>
               </div>
             </div>
             <div class="channels-card" id="channelsCard">
