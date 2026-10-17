@@ -25,6 +25,7 @@ from agent.tools.system_tools import (get_system_status, open_application, run_s
                                       control_system_volume, APP_ALIASES)
 from agent.tools.obsidian_tools import get_vault_path, sync_edith_session, search_vault
 from agent.channels.security import get_api_token
+from agent import ratelimit
 from ide.auth import AccessGuard, access_link_hint
 from ide.channels_api import router as channels_router, start_channels, stop_channels
 from ide.setup_api import router as setup_router
@@ -335,6 +336,11 @@ async def websocket_chat(websocket: WebSocket):
                 if fut and not fut.done():
                     fut.set_result(payload.get("approved") is True)
             elif action == "query":
+                if not ratelimit.chat.hit("ui:" + ratelimit.client_ip(websocket.scope)):
+                    await websocket.send_json({"type": "error", "message": (
+                        f"Vas muy rápido: máximo {Config.CHAT_LIMIT_PER_MINUTE} consultas por minuto. "
+                        "Espera unos segundos y vuelve a intentarlo.")})
+                    continue
                 await queries.put(payload)
     except WebSocketDisconnect:
         pass

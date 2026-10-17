@@ -12,6 +12,10 @@ bridges/whatsapp/node_modules/
 
 # Fase 14: tus conversaciones son privadas (siguen en disco, pero fuera del repositorio)
 data/sessions/
+# Tambien personales (Fase 14): perfil y memoria, audios generados y errores aprendidos
+data/memory/
+data/audio/
+data/learnings/
 
 # Lanzador compilado (se genera con desktop/launcher/build_launcher.bat o install_edith.bat)
 EDITH.exe

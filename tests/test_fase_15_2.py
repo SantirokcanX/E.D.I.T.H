@@ -28,6 +28,7 @@ from dotenv import dotenv_values  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 import ide.server as srv  # noqa: E402
 import ide.setup_api as setup_api  # noqa: E402
+from agent import secret_store  # noqa: E402
 from agent.setup import hardware, settings  # noqa: E402
 from agent.memory.memory_manager import get_memory_manager  # noqa: E402
 
@@ -198,7 +199,9 @@ r = save({"TWILIO_AUTH_TOKEN": settings.MASK})
 check("dejar el token enmascarado no lo cambia", r.status_code == 200 and "TWILIO_AUTH_TOKEN" not in r.json()["changed"]
       and os.environ["TWILIO_AUTH_TOKEN"] == "secreto-de-prueba")
 r = save({"TWILIO_AUTH_TOKEN": "token-nuevo"})
-check("escribir uno nuevo sí lo guarda", dotenv_values(ENV).get("TWILIO_AUTH_TOKEN") == "token-nuevo")
+stored = dotenv_values(ENV).get("TWILIO_AUTH_TOKEN", "")
+check("escribir uno nuevo sí lo guarda (cifrado con DPAPI desde la v0.0.11)",
+      secret_store.unprotect(stored) == "token-nuevo" and (stored.startswith("dpapi:") or not secret_store.available()))
 
 r = save({"USER_NAME": "Diego"})
 check("el nombre va a la memoria a largo plazo (no al .env)", r.status_code == 200

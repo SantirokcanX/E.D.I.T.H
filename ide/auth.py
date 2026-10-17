@@ -25,6 +25,7 @@ from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse, R
 from agent.channels.security import get_api_token
 from agent.config import Config
 from agent.paths import FROZEN
+from agent import ratelimit
 
 # Rutas con autenticación propia: no usan el token de la interfaz
 OWN_AUTH_PATHS = {
@@ -172,11 +173,22 @@ class AccessGuard:
             return await self._reject(scope, receive, send, 400,
                                       f"Host no permitido ({hostname(host) or 'vacío'}). "
                                       "Añádelo a EDITH_ALLOWED_HOSTS en .env si es tuyo.")
+        ip = ratelimit.client_ip(scope)
+        remote = not ratelimit.is_loopback(ip)
+        if remote and ratelimit.auth_failures.blocked(ip):
+            return await self._reject(scope, receive, send, 429,
+                                      "Demasiados intentos con un token incorrecto. Espera un minuto.",
+                                      retry_after=ratelimit.auth_failures.retry_after(ip))
+        if remote and not ratelimit.http_remote.hit(ip):
+            return await self._reject(scope, receive, send, 429, "Demasiadas peticiones seguidas. Espera un momento.",
+                                      retry_after=ratelimit.http_remote.retry_after(ip))
         if path in OWN_AUTH_PATHS:
             return await self.app(scope, receive, send)
 
         token, via = _request_token(headers, cookie_name(scope))
         authed = token_matches(token)
+        if token and not authed and remote:
+            ratelimit.auth_failures.hit(ip)  # solo desde fuera: en la laptop una cookie vieja no bloquea
 
         if is_ws:
             origin = headers.get("origin")
@@ -217,6 +229,9 @@ class AccessGuard:
 
     async def _login_link(self, scope, receive, send, path: str, link_token: str):
         if not token_matches(link_token):
+            ip = ratelimit.client_ip(scope)
+            if not ratelimit.is_loopback(ip):
+                ratelimit.auth_failures.hit(ip)
             return await self._reject(scope, receive, send, 401, "El enlace de acceso no es válido o caducó.")
         # Cookie y redirección a la misma ruta SIN el token (no queda en la barra ni en el Referer)
         query = parse_qs(scope.get("query_string", b"").decode("latin-1"))
@@ -238,7 +253,7 @@ class AccessGuard:
         return wrapped
 
     @staticmethod
-    async def _reject(scope, receive, send, status: int, message: str):
+    async def _reject(scope, receive, send, status: int, message: str, retry_after: Optional[int] = None):
         if scope["type"] == "websocket":
             # Cerrar antes de aceptar = el servidor responde 403 al handshake
             await send({"type": "websocket.close", "code": 1008, "reason": message[:120]})
@@ -252,6 +267,8 @@ class AccessGuard:
             port = (scope.get("server") or ("", None))[1]
             resp = HTMLResponse(LOGIN_PAGE.format(message=message, how=login_help_html(port)), status_code=status)
         resp.headers["Cache-Control"] = "no-store"
+        if retry_after:
+            resp.headers["Retry-After"] = str(retry_after)
         await resp(scope, receive, send)
 
 

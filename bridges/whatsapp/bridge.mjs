@@ -49,6 +49,11 @@ function loadSecret () {
   if (process.env.EDITH_BRIDGE_SECRET) return process.env.EDITH_BRIDGE_SECRET.trim()
   try {
     const s = fs.readFileSync(SECRET_FILE, 'utf8').trim()
+    if (s.startsWith('dpapi:')) {
+      // Cifrada con DPAPI por EDITH: solo EDITH la descifra y la pasa en EDITH_BRIDGE_SECRET
+      console.error('[bridge] La clave está cifrada: arranca el bridge desde EDITH (o define EDITH_BRIDGE_SECRET).')
+      process.exit(1)
+    }
     if (s.length >= 32) return s
   } catch {}
   const s = crypto.randomBytes(32).toString('base64url')
@@ -146,7 +151,7 @@ async function handleMessage (m) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Edith-Bridge-Secret': SECRET },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(240000),
+      signal: AbortSignal.timeout(600000), // 10 min: puede esperar tu "SI <código>" por WhatsApp
     })
     reply = r.ok ? await r.json() : { reply_text: `⚠️ EDITH respondió con un error (HTTP ${r.status}).` }
   } catch (e) {

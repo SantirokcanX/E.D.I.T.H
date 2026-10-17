@@ -3,16 +3,25 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from .paths import FROZEN, env_file
+from .secret_store import decrypt_environ
 
 # .env del proyecto (desarrollo) o, en la app instalada, el de %LOCALAPPDATA%\EDITH
 env_path = env_file()
 load_dotenv(dotenv_path=env_path)
+decrypt_environ()  # secretos guardados desde Ajustes van cifrados con DPAPI
 
 _TRUE = ("1", "true", "yes", "si", "sí")
 
 
 def _flag(name: str, default: str) -> bool:
     return os.getenv(name, default).lower().strip() in _TRUE
+
+
+def _int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)).strip())
+    except ValueError:
+        return default
 
 
 def _digits(number: str) -> str:
@@ -32,6 +41,7 @@ class Config:
     def reload(cls):
         """Carga (o recarga) la configuración desde el archivo .env."""
         load_dotenv(dotenv_path=env_path, override=True)
+        decrypt_environ()
         cls.PROVIDER = os.getenv("AI_PROVIDER", "ollama").lower().strip()
 
         # Ollama settings
@@ -122,6 +132,11 @@ class Config:
         cls.EDITH_ALLOWED_HOSTS = [h.strip().lower() for h in os.getenv("EDITH_ALLOWED_HOSTS", "").split(",") if h.strip()]
         # true = al abrir la interfaz desde la propia máquina (127.0.0.1) entra sin pedir el enlace con token
         cls.EDITH_LOCAL_AUTOLOGIN = _flag("EDITH_LOCAL_AUTOLOGIN", "true")
+        # Límites por minuto (0 = sin límite): peticiones desde otro dispositivo, consultas al modelo
+        # por cliente e intentos con un token incorrecto por IP
+        cls.RATE_LIMIT_PER_MINUTE = _int("RATE_LIMIT_PER_MINUTE", 240)
+        cls.CHAT_LIMIT_PER_MINUTE = _int("CHAT_LIMIT_PER_MINUTE", 20)
+        cls.AUTH_FAILURES_PER_MINUTE = _int("AUTH_FAILURES_PER_MINUTE", 10)
 
 
 Config.reload()

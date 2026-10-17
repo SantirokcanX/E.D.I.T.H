@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from dotenv import set_key
 
 from .. import config as config_module
+from .. import secret_store
 from ..config import Config
 from ..paths import EDITH_HOME, PROJECT_DIR
 
@@ -71,7 +72,8 @@ SCHEMA: List[Dict[str, Any]] = [
          "options": [["gather", "Por turnos (funciona siempre)"], ["relay", "Tiempo real (requiere ConversationRelay)"]]},
         {"key": "REMOTE_ALLOW_SYSTEM_TOOLS", "label": "Permitir PowerShell y apps desde WhatsApp/teléfono",
          "type": "bool", "danger": True,
-         "help": "No recomendado: quien controle uno de tus números podría ejecutar comandos en esta PC."},
+         "help": "Cada comando o app te pide autorización por WhatsApp (respondes SI y un código; caduca en "
+                 "2 min). Desde una llamada siempre se rechazan. Úsalo solo si tus números son de confianza."},
     ]},
     {"id": "autonomia", "title": "Autonomía", "icon": "⏰", "fields": [
         {"key": "HEARTBEAT_ENABLED", "label": "Avisos, recordatorios y vigilancia (Heartbeat)", "type": "bool"},
@@ -306,7 +308,9 @@ def save(values: Dict[str, Any]) -> Dict[str, Any]:
     changed = []
     for key, val in to_env.items():
         if os.getenv(key, None) != val:
-            set_key(str(env_path), key, val, quote_mode="auto", encoding="utf-8")
+            # Los secretos (tokens, contraseñas) se escriben cifrados con DPAPI; en memoria van en claro
+            stored = secret_store.protect(val) if FIELDS[key]["type"] == "secret" else val
+            set_key(str(env_path), key, stored, quote_mode="auto", encoding="utf-8")
             os.environ[key] = val
             changed.append(key)
     if profile_name is not None:

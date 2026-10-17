@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 from agent.channels import notifier
 from agent.channels import telephony, whatsapp
-from agent.channels.security import check_bridge_secret, canonical_number
+from agent.channels.security import check_bridge_secret, canonical_number, get_bridge_secret
 from agent.config import Config
 from agent.paths import APP_DIR, DATA_DIR, FROZEN, INSTALL_DIR, LOGS_DIR, PROJECT_DIR
 from agent.heartbeat import Heartbeat
@@ -108,7 +108,9 @@ def _start_bridge(port: int):
     BRIDGE_LOG.parent.mkdir(parents=True, exist_ok=True)
     log = open(BRIDGE_LOG, "a", encoding="utf-8")
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
-    env = {**os.environ, "EDITH_URL": f"http://127.0.0.1:{port}", "EDITH_DATA_DIR": str(DATA_DIR)}
+    # La clave va en el entorno: en disco está cifrada con DPAPI y el bridge (Node) no podría leerla
+    env = {**os.environ, "EDITH_URL": f"http://127.0.0.1:{port}", "EDITH_DATA_DIR": str(DATA_DIR),
+           "EDITH_BRIDGE_SECRET": get_bridge_secret()}
     _state["bridge"] = subprocess.Popen(args, cwd=str(cwd), stdout=log, stderr=log, creationflags=flags, env=env)
     print(f"[WhatsApp] bridge iniciado: {Path(args[-1]).name} (log: {BRIDGE_LOG})")
 

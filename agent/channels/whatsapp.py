@@ -5,12 +5,16 @@ Flujo saliente:  notificaciones -> send_whatsapp() -> POST {bridge}/send (con cl
 """
 
 import base64
+import json
 import re
+import secrets
+import threading
 import unicodedata
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional, Tuple
 
 import httpx
 
+from .. import ratelimit
 from ..config import Config
 from ..tools.reminder_tools import ack_reminder
 from .conversations import get_channel_agent, reset_channel_agent
@@ -19,6 +23,70 @@ from .security import canonical_number, get_bridge_secret, is_authorized
 # Solo palabras inequívocas: un "sí" suelto podría ser respuesta a otra pregunta de EDITH
 ACK_WORDS = {"ok", "okay", "listo", "hecho", "confirmado", "confirmo", "entendido", "enterado", "👍", "✅"}
 NEW_CHAT_WORDS = {"/nuevo", "/new", "/reset"}
+
+# Confirmación por WhatsApp (Fase 14): una acción sensible pedida desde el celular espera a que
+# respondas "SI <código>". El código evita que un "sí" a otra pregunta autorice por accidente.
+CONFIRM_TIMEOUT = 120
+YES_WORDS = {"si", "autorizo", "autorizado", "dale", "adelante", "hazlo"}
+NO_WORDS = {"no", "cancela", "cancelar", "cancelalo", "rechazo", "nel", "alto", "detente"}
+_pending: Dict[str, Dict[str, Any]] = {}  # número -> {"code", "event", "approved"}
+_pending_lock = threading.Lock()
+
+
+def _describe_action(tool_name: str, args: Dict[str, Any]) -> Tuple[str, str]:
+    if tool_name == "run_system_command":
+        return "ejecutar en PowerShell", str(args.get("command", ""))
+    if tool_name == "open_application":
+        return "abrir una aplicación", str(args.get("app_name", ""))
+    return f"usar «{tool_name}»", json.dumps(args, ensure_ascii=False)
+
+
+def confirm_via_whatsapp(sender: str) -> Callable[[str, Dict[str, Any], str], bool]:
+    """on_confirm del agente: pregunta por WhatsApp y espera "SI <código>" (o "NO") del mismo número."""
+    def on_confirm(tool_name: str, args: Dict[str, Any], reason: str) -> bool:
+        action, detail = _describe_action(tool_name, args)
+        entry = {"code": f"{secrets.randbelow(9000) + 1000}", "event": threading.Event(), "approved": False}
+        with _pending_lock:
+            _pending[sender] = entry
+        text = (f"🔐 *EDITH quiere {action} en la laptop:*\n```{detail[:400]}```\n"
+                + (f"_{reason}_\n" if reason else "")
+                + f"Responde *SI {entry['code']}* para autorizar o *NO* para cancelar (caduca en 2 min).")
+        if not send_whatsapp(text=text, to=sender):
+            with _pending_lock:
+                _pending.pop(sender, None)
+            return False
+        answered = entry["event"].wait(CONFIRM_TIMEOUT)
+        with _pending_lock:
+            if _pending.get(sender) is entry:
+                del _pending[sender]
+        if not answered:
+            send_whatsapp(text="⌛ No respondiste a tiempo: no lo hice.", to=sender)
+        return answered and entry["approved"]
+    return on_confirm
+
+
+def _confirmation_answer(norm: str, code: str) -> Optional[bool]:
+    """True = autoriza, False = rechaza, None = no es una respuesta válida a la confirmación."""
+    words = re.findall(r"\w+", norm)  # "si, 4821" o "SÍ 4821!" -> ["si", "4821"]
+    if words and words[0] in NO_WORDS:
+        return False
+    if code in words and all(w in YES_WORDS or w == code for w in words):
+        return True
+    return None
+
+
+def answer_pending_confirmation(sender: str, norm: str) -> Optional[str]:
+    """Si hay una autorización pendiente para este número, la resuelve y devuelve qué contestar."""
+    with _pending_lock:
+        entry = _pending.get(sender)
+    if not entry:
+        return None
+    answer = _confirmation_answer(norm, entry["code"])
+    if answer is None:
+        return f"Antes dime si autorizas lo pendiente: responde *SI {entry['code']}* o *NO*."
+    entry["approved"] = answer
+    entry["event"].set()
+    return "✅ Autorizado, lo hago." if answer else "❌ Cancelado, no lo hago."
 
 
 def _norm(text: str) -> str:
@@ -66,6 +134,9 @@ async def handle_inbound(provider, payload: Dict[str, Any]) -> Dict[str, Any]:
         return {"ignore": True, "reason": "empty"}
 
     norm = _norm(text)
+    pending_reply = answer_pending_confirmation(sender, norm)
+    if pending_reply:
+        return {"reply_text": pending_reply}
     if norm in NEW_CHAT_WORDS:
         reset_channel_agent("whatsapp", sender)
         return {"reply_text": "🆕 Listo, empezamos una conversación nueva."}
@@ -76,8 +147,12 @@ async def handle_inbound(provider, payload: Dict[str, Any]) -> Dict[str, Any]:
         if acked:
             return {"reply_text": f"✅ Confirmado: _{acked['text']}_"}
 
+    if not ratelimit.chat.hit("wa:" + sender):
+        return {"reply_text": f"Vas muy rápido: máximo {Config.CHAT_LIMIT_PER_MINUTE} mensajes por minuto. "
+                              "Espera un momento y me lo repites."}
+    from ..core.reasoning_agent import AgentCallbacks
     agent = get_channel_agent(provider, "whatsapp", sender)
-    result = await asyncio.to_thread(agent.run, text)
+    result = await asyncio.to_thread(agent.run, text, AgentCallbacks(on_confirm=confirm_via_whatsapp(sender)))
     answer = result.answer or "…"
     reply: Dict[str, Any] = {"reply_text": to_whatsapp_markdown(answer)}
     if was_voice:

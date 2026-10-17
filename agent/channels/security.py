@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
+from .. import secret_store
 from ..config import Config
 
 from ..paths import DATA_DIR
@@ -47,26 +48,30 @@ def e164(number: str) -> str:
 
 
 def _local_secret(env_name: str, path: Path) -> str:
-    """Secreto de la variable de entorno o, si no está, del archivo (se genera la primera vez)."""
+    """Secreto de la variable de entorno o, si no está, del archivo (se genera la primera vez).
+    En disco va cifrado con DPAPI; un archivo antiguo en texto plano se cifra al leerlo."""
     env = os.getenv(env_name, "").strip()
     if env:
         return env
     with _secret_lock:  # dos peticiones a la vez no deben generar dos secretos distintos
         try:
-            value = path.read_text(encoding="utf-8").strip()
+            stored = path.read_text(encoding="utf-8").strip()
+            value = secret_store.unprotect(stored)
             if len(value) >= 32:
+                if not secret_store.is_protected(stored) and secret_store.available():
+                    path.write_text(secret_store.protect(value), encoding="utf-8")
                 return value
         except OSError:
             pass
         path.parent.mkdir(parents=True, exist_ok=True)
         value = secrets.token_urlsafe(32)
-        path.write_text(value, encoding="utf-8")
+        path.write_text(secret_store.protect(value), encoding="utf-8")
         return value
 
 
 def get_bridge_secret() -> str:
     """Clave compartida EDITH <-> bridge de WhatsApp. Se genera sola la primera vez
-    (data/channels/bridge_secret) y el bridge la lee del mismo archivo."""
+    (data/channels/bridge_secret, cifrada) y EDITH se la pasa al bridge en EDITH_BRIDGE_SECRET."""
     return _local_secret("EDITH_BRIDGE_SECRET", BRIDGE_SECRET_FILE)
 
 
