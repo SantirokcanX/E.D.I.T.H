@@ -33,6 +33,7 @@ from .clipboard_tools import read_clipboard, write_clipboard, CLIPBOARD_TOOLS_ME
 from .reminder_tools import create_reminder, list_reminders, cancel_reminder, REMINDER_TOOLS_METADATA
 from .keyboard_tools import keyboard_actions, KEYBOARD_TOOLS_METADATA
 from .browser_tools import BROWSER_HANDLERS, BROWSER_TOOLS_METADATA, browser_active
+from . import calendar_tools, email_tools, home_tools
 from .screen_tools import (
     capture_screen,
     analyze_screen,
@@ -89,6 +90,9 @@ ALL_TOOLS_METADATA = (
 OPTIONAL_TOOL_GROUPS = [
     # El resto del navegador solo cuando hay una página abierta: así no gasta contexto del modelo
     (browser_active, [t for t in BROWSER_TOOLS_METADATA if t["name"] != "browser_open"]),
+    (home_tools.enabled, home_tools.HOME_TOOLS_METADATA),
+    (calendar_tools.enabled, calendar_tools.CALENDAR_TOOLS_METADATA),
+    (email_tools.enabled, email_tools.EMAIL_TOOLS_METADATA),
 ]
 
 
@@ -107,6 +111,9 @@ def available_tools_metadata():
 EXTRA_HANDLERS = {
     "keyboard_actions": keyboard_actions,
     **BROWSER_HANDLERS,
+    **home_tools.HOME_HANDLERS,
+    **calendar_tools.CALENDAR_HANDLERS,
+    **email_tools.EMAIL_HANDLERS,
 }
 
 # Herramientas que tocan la máquina directamente: bloqueadas desde canales remotos

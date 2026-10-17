@@ -149,8 +149,8 @@ check("queda guardado en EDITH_HOME/setup.json", settings.SETUP_FILE.exists() an
 os.environ["TWILIO_AUTH_TOKEN"] = "secreto-de-prueba"
 g = cli().get("/api/settings", headers=AUTH).json()
 keys = [f["key"] for s in g["schema"] for f in s["fields"]]
-check("7 secciones de Ajustes", [s["id"] for s in g["schema"]] ==
-      ["perfil", "modelos", "obsidian", "voz", "canales", "autonomia", "avanzado"])
+check("secciones de Ajustes (7 de la 15.2 + «Casa y cuentas»)", [s["id"] for s in g["schema"]] ==
+      ["perfil", "modelos", "obsidian", "voz", "canales", "autonomia", "integraciones", "avanzado"])
 check("«Iniciar con Windows» no aparece fuera de la app de escritorio", "START_WITH_WINDOWS" not in keys)
 check("el Auth Token de Twilio llega enmascarado", g["values"]["TWILIO_AUTH_TOKEN"] == settings.MASK)
 check("el .env que se edita es el temporal de la prueba", g["env_file"] == str(ENV), g["env_file"])

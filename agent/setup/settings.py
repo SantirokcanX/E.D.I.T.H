@@ -92,6 +92,20 @@ SCHEMA: List[Dict[str, Any]] = [
         {"key": "START_WITH_WINDOWS", "label": "Iniciar EDITH con Windows (en la bandeja)", "type": "bool",
          "store": "registry", "desktop_only": True},
     ]},
+    {"id": "integraciones", "title": "Casa y cuentas", "icon": "🏠", "fields": [
+        {"key": "HA_URL", "label": "Home Assistant: dirección", "type": "url", "allow_empty": True,
+         "help": "Ej.: http://homeassistant.local:8123. Luces, enchufes, clima y escenas (nunca cerraduras ni alarmas)."},
+        {"key": "HA_TOKEN", "label": "Home Assistant: token de larga duración", "type": "secret", "allow_empty": True,
+         "help": "En Home Assistant: tu perfil › Seguridad › Tokens de acceso de larga duración. Se guarda cifrado."},
+        {"key": "CALENDAR_ICS_URLS", "label": "Calendario: enlaces iCal", "type": "secret", "allow_empty": True,
+         "help": "Google: Configuración del calendario › Dirección secreta en formato iCal. Varios, separados por comas."},
+        {"key": "EMAIL_IMAP_HOST", "label": "Correo: servidor IMAP", "type": "text", "allow_empty": True,
+         "help": "Gmail: imap.gmail.com · Outlook: outlook.office365.com. Solo lectura: no marca, no borra, no envía."},
+        {"key": "EMAIL_ADDRESS", "label": "Correo: tu dirección", "type": "text", "allow_empty": True},
+        {"key": "EMAIL_PASSWORD", "label": "Correo: contraseña de aplicación", "type": "secret", "allow_empty": True,
+         "help": "No tu contraseña normal: una de aplicación (Gmail: Cuenta › Seguridad › Contraseñas de aplicaciones)."},
+        {"key": "EMAIL_IMAP_PORT", "label": "Correo: puerto IMAP", "type": "number", "min": 1, "max": 65535},
+    ]},
     {"id": "avanzado", "title": "Avanzado", "icon": "🛠️", "fields": [
         {"key": "OLLAMA_NUM_CTX", "label": "Memoria de trabajo del modelo (tokens)", "type": "number", "min": 4096, "max": 65536,
          "help": "El prompt de EDITH ya ocupa ~4100. Más = conversaciones más largas, pero más VRAM."},
@@ -272,6 +286,12 @@ def _validate(key: str, value: Any) -> Tuple[Optional[str], Optional[str]]:
         parts = spec.split("+")
         ok = len(parts) >= 2 and len(parts[-1]) == 1 and all(p in ("ctrl", "alt", "shift", "win") for p in parts[:-1])
         return (spec, None) if ok else (None, "Atajo no válido: usa algo como win+shift+e.")
+    if key == "CALENDAR_ICS_URLS":
+        urls = [u.strip() for u in text.split(",") if u.strip()]
+        bad = [u for u in urls if not re.match(r"^(https?|webcal)://[^\s]+$", u)]
+        return (",".join(urls), None) if not bad else (None, "Cada enlace iCal debe empezar por https:// o webcal://")
+    if key == "EMAIL_ADDRESS":
+        return (text, None) if re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", text) else (None, "Correo no válido.")
     if key == "OLLAMA_KEEP_ALIVE":
         return (text, None) if re.match(r"^(-1|\d+[smh]?)$", text) else (None, "Usa 30m, 2h o -1.")
     return text, None

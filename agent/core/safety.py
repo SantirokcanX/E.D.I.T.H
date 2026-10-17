@@ -23,12 +23,14 @@ UNTRUSTED_OUTPUT = {
     "read_workspace_file", "obsidian_read_note", "read_obsidian_note", "obsidian_search",
     "read_clipboard", "analyze_screen",
     "browser_open", "browser_read", "browser_follow_link", "browser_click",
+    "calendar_events", "email_list", "email_read",  # texto de terceros (invitaciones, correos)
 }
 
 # Leen datos privados del usuario
 PRIVATE_DATA = {
     "read_workspace_file", "obsidian_read_note", "read_obsidian_note", "obsidian_search",
     "read_clipboard", "capture_screen", "analyze_screen",
+    "calendar_events", "email_list", "email_read",
 }
 
 # Con contenido externo en el turno, también piden confirmación
@@ -37,6 +39,7 @@ SENSITIVE_AFTER_EXTERNAL = {
     "obsidian_create_note", "obsidian_append_note", "create_obsidian_note", "append_to_obsidian_note",
     "write_clipboard", "read_clipboard", "capture_screen", "analyze_screen",
     "create_reminder", "cancel_reminder",
+    "ha_control",  # un correo o una web no deben poder apagar o encender cosas de tu casa
 }
 
 # Sacan información a internet

@@ -80,6 +80,14 @@ class Config:
         cls.OBSIDIAN_SAVE_WORKSPACE = _flag("OBSIDIAN_SAVE_WORKSPACE", "true")
         # Fase 12: navegador propio de EDITH (Playwright). msedge = el Microsoft Edge instalado
         cls.BROWSER_CHANNEL = os.getenv("BROWSER_CHANNEL", "msedge").strip()
+        # Fase 13 (IoT): Home Assistant. Fase 11: calendario (enlaces iCal) y correo IMAP de solo lectura
+        cls.HA_URL = os.getenv("HA_URL", "").strip().rstrip("/")
+        cls.HA_TOKEN = os.getenv("HA_TOKEN", "").strip()
+        cls.CALENDAR_ICS_URLS = [u.strip() for u in os.getenv("CALENDAR_ICS_URLS", "").split(",") if u.strip()]
+        cls.EMAIL_IMAP_HOST = os.getenv("EMAIL_IMAP_HOST", "").strip()
+        cls.EMAIL_IMAP_PORT = _int("EMAIL_IMAP_PORT", 993)
+        cls.EMAIL_ADDRESS = os.getenv("EMAIL_ADDRESS", "").strip()
+        cls.EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD", "").strip()
 
         # Voz elegida en Ajustes (elvira, dalia, ximena, salome)
         cls.EDITH_VOICE = os.getenv("EDITH_VOICE", "elvira").strip().lower()
