@@ -438,21 +438,31 @@ class ReasoningAgent:
                          "hacerlo; pregúntale qué prefiere."}
 
     def resolve_think(self, user_prompt: str, think: Optional[bool] = None) -> bool:
-        """Decide si este turno razona a fondo: elección del usuario > .env > heurística."""
+        """Decide si este turno razona a fondo: elección del usuario > .env > heurística + lo aprendido."""
         if think is not None:
             return think
         if Config.OLLAMA_THINK_MODE != "auto":
             return Config.OLLAMA_THINK_MODE == "true"
-        return needs_deep_thinking(user_prompt)
+        if needs_deep_thinking(user_prompt):
+            return True
+        if Config.ML_ENABLED:
+            try:  # casos que la heurística no ve, aprendidos de cuándo eliges 🔬 Profundo
+                from ..ml.deep_router import get_deep_router
+                return get_deep_router().wants_deep(user_prompt, Config.DEEP_ML_THRESHOLD)
+            except Exception:
+                return False
+        return False
 
     def run(self, user_prompt: str, callbacks: Optional[AgentCallbacks] = None,
-            think: Optional[bool] = None) -> AgentRunResult:
+            think: Optional[bool] = None, untrusted_input: bool = False) -> AgentRunResult:
+        """untrusted_input=True: el mensaje trae contenido de terceros (una foto o un documento que llegó
+        por WhatsApp): las acciones sensibles del turno piden confirmación, como tras leer una web."""
         # Un turno a la vez en el modelo local, venga del canal que venga
         with LLM_LOCK:
-            return self._run(user_prompt, callbacks, think)
+            return self._run(user_prompt, callbacks, think, untrusted_input)
 
     def _run(self, user_prompt: str, callbacks: Optional[AgentCallbacks] = None,
-             think: Optional[bool] = None) -> AgentRunResult:
+             think: Optional[bool] = None, untrusted_input: bool = False) -> AgentRunResult:
         callbacks = callbacks or AgentCallbacks()
         deep = self.resolve_think(user_prompt, think)
         turn_start = len(self.conversation_history)
@@ -463,6 +473,7 @@ class ReasoningAgent:
         collected_thoughts: List[str] = []
         collected_sources: List[Dict[str, str]] = []
         guard = TurnGuard()  # qué entró en este turno: decide qué acciones piden confirmación
+        guard.external = guard.external or untrusted_input
         final_answer = ""
         iteration = 0
 

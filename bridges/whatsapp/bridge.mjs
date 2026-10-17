@@ -33,6 +33,7 @@ const SECRET_FILE = path.join(EDITH_DATA, 'channels', 'bridge_secret')
 const EDITH_URL = (process.env.EDITH_URL || 'http://127.0.0.1:8000').replace(/\/$/, '')
 const PORT = Number(process.env.BRIDGE_PORT || 3100)
 const MAX_AUDIO_BYTES = 10 * 1024 * 1024
+const MAX_MEDIA_BYTES = 10 * 1024 * 1024
 
 // build/build_setup.ps1: comprueba que el ejecutable carga Baileys y sus módulos, sin conectarse
 if (process.argv.includes('--check')) {
@@ -126,7 +127,8 @@ async function handleMessage (m) {
   lastJidFor.set(canonical(number), remote)
 
   const msg = unwrap(m.message)
-  const text = msg?.conversation || msg?.extendedTextMessage?.text || msg?.imageMessage?.caption || ''
+  const doc = msg?.documentMessage
+  const text = msg?.conversation || msg?.extendedTextMessage?.text || msg?.imageMessage?.caption || doc?.caption || ''
   const payload = { from: number, message_id: m.key.id, push_name: m.pushName || '', text }
 
   if (msg?.audioMessage) {
@@ -138,8 +140,24 @@ async function handleMessage (m) {
     const buf = await downloadMediaMessage(m, 'buffer', {}, { logger, reuploadRequest: sock.updateMediaMessage })
     payload.audio_b64 = Buffer.from(buf).toString('base64')
     payload.audio_mime = msg.audioMessage.mimetype || 'audio/ogg'
+  } else if (msg?.imageMessage || doc) {
+    // Fase 9: fotos y documentos (PDF, Word, texto). EDITH los ve o los lee y responde
+    const media = msg.imageMessage || doc
+    if (Number(media.fileLength || 0) > MAX_MEDIA_BYTES) {
+      await sock.sendMessage(remote, { text: 'Ese archivo pasa de 10 MB: mándame uno más ligero.' })
+      return
+    }
+    const buf = await downloadMediaMessage(m, 'buffer', {}, { logger, reuploadRequest: sock.updateMediaMessage })
+    if (msg.imageMessage) {
+      payload.image_b64 = Buffer.from(buf).toString('base64')
+      payload.image_mime = msg.imageMessage.mimetype || 'image/jpeg'
+    } else {
+      payload.document_b64 = Buffer.from(buf).toString('base64')
+      payload.document_name = doc.fileName || doc.title || 'documento'
+      payload.document_mime = doc.mimetype || ''
+    }
   } else if (!text) {
-    await sock.sendMessage(remote, { text: 'Por ahora solo entiendo texto y notas de voz 🙂' })
+    await sock.sendMessage(remote, { text: 'Por ahora entiendo texto, notas de voz, fotos y documentos 🙂' })
     return
   }
 

@@ -41,6 +41,8 @@ SCHEMA: List[Dict[str, Any]] = [
          "help": "Matemáticas, lógica y depuración. Vacío = usar el rápido para todo (sirve con modelos híbridos)."},
         {"key": "OLLAMA_THINK", "label": "Razonamiento", "type": "select",
          "options": [["auto", "Automático (recomendado)"], ["false", "Siempre rápido"], ["true", "Siempre a fondo"]]},
+        {"key": "VISION_MODEL", "label": "Modelo de visión (fotos y pantalla)", "type": "model", "allow_empty": True,
+         "help": "Ve fotos de WhatsApp y tu pantalla sin salir de la laptop. qwen3-vl:4b ocupa unos 3 GB. Vacío = sin visión local."},
     ]},
     {"id": "obsidian", "title": "Obsidian", "icon": "💎", "fields": [
         {"key": "OBSIDIAN_VAULT_PATH", "label": "Carpeta de tu bóveda", "type": "folder",

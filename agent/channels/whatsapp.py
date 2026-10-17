@@ -122,11 +122,20 @@ async def handle_inbound(provider, payload: Dict[str, Any]) -> Dict[str, Any]:
         if not text:
             return {"reply_text": "No entendí la nota de voz, ¿me la repites?"}
 
+    attachment = ""
+    if payload.get("image_b64") or payload.get("document_b64"):
+        attachment, problem = await asyncio.to_thread(_read_attachment, payload, text)
+        if problem:
+            return {"reply_text": problem}
+        if not text:
+            text = ("Te mandé una foto: dime qué ves." if payload.get("image_b64")
+                    else f"Te mandé el documento «{payload.get('document_name') or 'documento'}»: resúmelo.")
+
     if not text:
         return {"ignore": True, "reason": "empty"}
 
     norm = _norm(text)
-    pending_reply = answer_pending_confirmation(sender, norm)
+    pending_reply = None if attachment else answer_pending_confirmation(sender, norm)
     if pending_reply:
         return {"reply_text": pending_reply}
     if norm in NEW_CHAT_WORDS:
@@ -144,7 +153,9 @@ async def handle_inbound(provider, payload: Dict[str, Any]) -> Dict[str, Any]:
                               "Espera un momento y me lo repites."}
     from ..core.reasoning_agent import AgentCallbacks
     agent = get_channel_agent(provider, "whatsapp", sender)
-    result = await asyncio.to_thread(agent.run, text, AgentCallbacks(on_confirm=confirm_via_whatsapp(sender)))
+    prompt = f"{attachment}\n\n{text}" if attachment else text
+    result = await asyncio.to_thread(agent.run, prompt, AgentCallbacks(on_confirm=confirm_via_whatsapp(sender)),
+                                     None, bool(attachment))
     answer = result.answer or "…"
     reply: Dict[str, Any] = {"reply_text": to_whatsapp_markdown(answer)}
     if was_voice:
@@ -159,6 +170,39 @@ async def handle_inbound(provider, payload: Dict[str, Any]) -> Dict[str, Any]:
         except Exception as e:
             print(f"[WhatsApp] no se pudo generar la nota de voz: {e}")
     return reply
+
+
+MAX_MEDIA_BYTES = 10 * 1024 * 1024
+
+
+def _read_attachment(payload: Dict[str, Any], question: str):
+    """Foto o documento de WhatsApp -> (texto para el modelo, marcado como no confiable; o problema)."""
+    from .. import documents, vision
+    from ..core.safety import mark_untrusted
+    from ..paths import WORKSPACE_DIR
+    key = "image_b64" if payload.get("image_b64") else "document_b64"
+    try:
+        data = base64.b64decode(payload[key])
+    except Exception:
+        return "", "No pude abrir lo que me mandaste. ¿Me lo reenvías?"
+    if len(data) > MAX_MEDIA_BYTES:
+        return "", "Ese archivo pasa de 10 MB: mándame uno más ligero."
+    if key == "image_b64":
+        desc, who = vision.describe_image(data, question, payload.get("image_mime") or "image/jpeg")
+        if not desc:
+            return "", f"📷 Recibí tu foto, pero todavía no puedo verla: {who}."
+        return mark_untrusted("foto de WhatsApp", f"Lo que se ve en la foto que mandó el usuario: {desc}"), None
+    name = documents.safe_filename(payload.get("document_name"))
+    out = documents.extract_text(data, name, payload.get("document_mime") or "")
+    if "error" in out:
+        return "", f"📄 {out['error']}"
+    folder = WORKSPACE_DIR / "recibidos"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / name).write_bytes(data)  # queda en el workspace por si quieres que lo guarde o lo compare
+    pages = f", {out['pages']} páginas" if out.get("pages") else ""
+    cut = " (recortado)" if out.get("truncated") else ""
+    body = f"Documento «{name}» que mandó el usuario{pages}{cut}, guardado en workspace/recibidos:\n{out['text']}"
+    return mark_untrusted("documento de WhatsApp", body), None
 
 
 def bridge_status() -> Dict[str, Any]:

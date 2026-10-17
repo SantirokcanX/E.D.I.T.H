@@ -271,9 +271,12 @@ check("descarga completa con progreso (duplicados juntos)", p["ok"] and p["perce
       and [i["model"] for i in p["items"]] == ["qwen3:4b"] and p["items"][0]["status"] == "listo", p)
 
 cli().post("/api/setup/models/pull", json={"models": ["lento:1b", "qwen3:1.7b"]}, headers=POST)
-time.sleep(0.6)
+for _ in range(100):  # espera a que empiece a llegar el progreso (más o menos rápido según la carga del equipo)
+    mid = cli().get("/api/setup/models/progress", headers=AUTH).json()
+    if mid["percent"] > 0:
+        break
+    time.sleep(0.05)
 busy = cli().post("/api/setup/models/pull", json={"models": ["otro:1b"]}, headers=POST).status_code
-mid = cli().get("/api/setup/models/progress", headers=AUTH).json()
 cli().post("/api/setup/models/cancel", headers=POST)
 for _ in range(60):
     p = cli().get("/api/setup/models/progress", headers=AUTH).json()
@@ -281,7 +284,7 @@ for _ in range(60):
         break
     time.sleep(0.05)
 check("solo una descarga a la vez -> 409", busy == 409)
-check("el porcentaje avanza mientras descarga", 0 < mid["percent"] < 100, mid["percent"])
+check("el porcentaje avanza mientras descarga", 0 < mid["percent"] < 100, mid)
 check("pausar detiene la descarga y la siguiente queda cancelada",
       [i["status"] for i in p["items"]] == ["cancelado", "cancelado"] and not p["ok"], [i["status"] for i in p["items"]])
 

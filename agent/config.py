@@ -52,6 +52,8 @@ class Config:
         cls.OLLAMA_DEEP_MODEL = os.getenv("OLLAMA_DEEP_MODEL", "qwen3:4b").strip()
         # Velocidad: mantener el modelo cargado en RAM/VRAM entre mensajes y limitar el contexto
         cls.OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "30m").strip()
+        # Visión local (fotos por WhatsApp, pantalla): modelo multimodal de Ollama; vacío = sin visión local
+        cls.VISION_MODEL = os.getenv("VISION_MODEL", "qwen3-vl:4b").strip()
         cls.OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "8192"))
         # auto = EDITH decide por consulta (rápido para charla, profundo para problemas difíciles)
         # true = siempre razona; false = siempre responde directo
@@ -72,6 +74,8 @@ class Config:
         cls.ML_ENABLED = _flag("ML_ENABLED", "true")
         cls.ML_AUTO_ROUTE = _flag("ML_AUTO_ROUTE", "true")
         cls.ML_AUTO_THRESHOLD = float(os.getenv("ML_AUTO_THRESHOLD", "0.6"))
+        # Razonamiento automático: certeza mínima del clasificador aprendido para pensar a fondo
+        cls.DEEP_ML_THRESHOLD = float(os.getenv("DEEP_ML_THRESHOLD", "0.75"))
 
         # Obsidian (bóveda = memoria externa de EDITH)
         cls.OBSIDIAN_VAULT_PATH = os.getenv("OBSIDIAN_VAULT_PATH", "").strip() or _default_vault()

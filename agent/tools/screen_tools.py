@@ -122,6 +122,19 @@ def analyze_screen(query: Optional[str] = None) -> Dict[str, Any]:
 
     user_query = query or "Describe y analiza detalladamente lo que se observa en esta pantalla."
 
+    try:
+        from ..vision import describe_image, local_model_installed
+        if local_model_installed():
+            with open(image_file, "rb") as f:
+                desc, who = describe_image(f.read(), f"Ventana activa: '{active_win}' ({active_proc}). {user_query}",
+                                           "image/png")
+            if desc:
+                cap_res["visual_analysis"] = desc
+                cap_res["analyzed_by"] = who
+                return cap_res
+    except Exception as e:
+        cap_res["analysis_warning"] = f"Visión local no disponible: {e}"
+
     gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
     if gemini_key:
         try:
