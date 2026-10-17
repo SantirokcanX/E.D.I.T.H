@@ -14,7 +14,7 @@ import json
 import re
 from typing import Any, Optional
 
-CONFIRM_ALWAYS = {"run_system_command", "open_application"}
+CONFIRM_ALWAYS = {"run_system_command", "open_application", "keyboard_actions"}
 
 # Su salida es contenido de terceros o de archivos: se marca como dato no confiable
 UNTRUSTED_OUTPUT = {
@@ -68,6 +68,20 @@ class TurnGuard:
             self.external = True
         if tool in PRIVATE_DATA:
             self.private = True
+
+
+def describe_action(tool: str, args: Any) -> "tuple[str, str]":
+    """(título, detalle) legibles para pedir confirmación en la interfaz o por WhatsApp."""
+    args = args if isinstance(args, dict) else {}
+    if tool == "run_system_command":
+        return "EDITH quiere ejecutar en PowerShell:", str(args.get("command", ""))
+    if tool == "open_application":
+        return "EDITH quiere abrir una aplicación:", str(args.get("app_name", ""))
+    if tool == "keyboard_actions":
+        from ..tools.keyboard_tools import describe_steps
+        return (f"EDITH quiere escribir y pulsar teclas en «{args.get('target_window', '')}»:",
+                describe_steps(args.get("steps") or []).replace("; ", "\n"))
+    return f"EDITH quiere usar «{tool}»:", json.dumps(args, ensure_ascii=False, indent=2)
 
 
 def mark_untrusted(tool: str, output: Any) -> str:

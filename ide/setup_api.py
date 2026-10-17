@@ -20,6 +20,22 @@ router = APIRouter()
 _pulls = PullManager(Config.OLLAMA_BASE_URL)
 
 
+def _downloads_finished(progress):
+    """Fase 6: si la descarga terminó mientras no mirabas EDITH, aviso de Windows."""
+    from agent.channels.notifier import notifier
+    from ide import server as srv
+    if srv.any_ui_active():
+        return
+    names = ", ".join(i["model"] for i in progress["items"])
+    if progress["ok"]:
+        notifier.toast_if_enabled("Modelos descargados", f"Ya puedes usar {names}.")
+    elif any(i["status"] == "error" for i in progress["items"]):
+        notifier.toast_if_enabled("La descarga de modelos falló", "Abre Ajustes › Modelos para reintentar.")
+
+
+_pulls.on_finish = _downloads_finished
+
+
 def same_origin(request: Request):
     """Las rutas que cambian ajustes solo aceptan peticiones de la propia EDITH en esta máquina."""
     host = request.headers.get("host", "")

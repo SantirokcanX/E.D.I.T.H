@@ -19,6 +19,7 @@ class PullManager:
         self._cancel = threading.Event()
         self.models: Dict[str, Dict[str, Any]] = {}
         self.order: List[str] = []
+        self.on_finish = None  # callable(progress): p. ej. aviso de Windows al terminar (Fase 6)
 
     @property
     def running(self) -> bool:
@@ -57,6 +58,21 @@ class PullManager:
             self.models[model].update(fields)
 
     def _run(self):
+        try:
+            self._run_all()
+        finally:
+            if self.on_finish:
+                try:
+                    self.on_finish(self.progress_snapshot())
+                except Exception:
+                    pass
+
+    def progress_snapshot(self) -> Dict[str, Any]:
+        with self._lock:
+            items = [{"model": m, **self.models[m]} for m in self.order]
+        return {"items": items, "ok": bool(items) and all(i["status"] == "listo" for i in items)}
+
+    def _run_all(self):
         from ..providers.ollama_provider import ensure_ollama_running
         if not ensure_ollama_running(self.base_url, timeout=20.0):
             for m in self.order:

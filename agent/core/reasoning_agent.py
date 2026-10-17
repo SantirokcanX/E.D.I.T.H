@@ -36,7 +36,9 @@ from ..tools import (
     create_reminder,
     list_reminders,
     cancel_reminder,
-    ALL_TOOLS_METADATA
+    ALL_TOOLS_METADATA,
+    EXTRA_HANDLERS,
+    available_tools_metadata,
 )
 from ..memory.memory_manager import get_memory_manager, MemoryManager
 from ..learning.error_learner import get_error_learner, ErrorLearner
@@ -162,7 +164,6 @@ class ReasoningAgent:
         self.memory: MemoryManager = memory or get_memory_manager()
         # Herramientas prohibidas en este agente (p. ej. PowerShell desde WhatsApp)
         self.blocked_tools = set(blocked_tools or ())
-        self.tools_metadata = [t for t in ALL_TOOLS_METADATA if t["name"] not in self.blocked_tools]
         self.channel_note = channel_note.strip()
         self.learner: ErrorLearner = get_error_learner()
         self.conversation_history: List[Dict[str, Any]] = []
@@ -277,6 +278,11 @@ class ReasoningAgent:
                 print(f"[Obsidian] no se pudo sincronizar la sesión: {e}")
 
         threading.Thread(target=_sync, daemon=True).start()
+
+    @property
+    def tools_metadata(self) -> List[Dict[str, Any]]:
+        """Herramientas que ve el modelo: las de siempre + las opcionales configuradas, sin las bloqueadas."""
+        return [t for t in available_tools_metadata() if t["name"] not in self.blocked_tools]
 
     def _execute_tool(self, tool_name: str, args: Dict[str, Any], sources_collector: List[Dict[str, str]]) -> Any:
         if tool_name in self.blocked_tools:
@@ -395,6 +401,9 @@ class ReasoningAgent:
 
             elif tool_name == "write_clipboard":
                 return write_clipboard(text=args.get("text", ""))
+
+            elif tool_name in EXTRA_HANDLERS:
+                return EXTRA_HANDLERS[tool_name](**args)
 
             else:
                 err_msg = f"Herramienta desconocida: '{tool_name}'"

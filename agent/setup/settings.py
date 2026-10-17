@@ -46,6 +46,8 @@ SCHEMA: List[Dict[str, Any]] = [
         {"key": "OBSIDIAN_VAULT_PATH", "label": "Carpeta de tu bóveda", "type": "folder",
          "help": "EDITH guarda y lee notas aquí. Si la carpeta está vacía, crea la estructura 00-04."},
         {"key": "OBSIDIAN_AUTO_SYNC", "label": "Guardar cada conversación en el Diario", "type": "bool"},
+        {"key": "OBSIDIAN_SAVE_WORKSPACE", "label": "Copiar a la bóveda los diagramas y las notas del día", "type": "bool",
+         "help": "Diagramas en «03 - Conocimiento/Diagramas» (Obsidian dibuja Mermaid) y las notas del día en el Diario."},
     ]},
     {"id": "voz", "title": "Voz", "icon": "🔊", "fields": [
         {"key": "EDITH_VOICE", "label": "Voz de EDITH", "type": "voice", "options": VOICE_CHOICES},

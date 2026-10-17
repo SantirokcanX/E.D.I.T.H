@@ -31,6 +31,7 @@ from .obsidian_tools import (
 )
 from .clipboard_tools import read_clipboard, write_clipboard, CLIPBOARD_TOOLS_METADATA
 from .reminder_tools import create_reminder, list_reminders, cancel_reminder, REMINDER_TOOLS_METADATA
+from .keyboard_tools import keyboard_actions, KEYBOARD_TOOLS_METADATA
 from .screen_tools import (
     capture_screen,
     analyze_screen,
@@ -77,14 +78,37 @@ ALL_TOOLS_METADATA = (
     SCREEN_TOOLS_METADATA +
     OBSIDIAN_TOOLS_METADATA +
     CLIPBOARD_TOOLS_METADATA +
-    REMINDER_TOOLS_METADATA
+    REMINDER_TOOLS_METADATA +
+    KEYBOARD_TOOLS_METADATA
 )
+
+# Grupos opcionales: solo se ofrecen al modelo si están configurados (Home Assistant, correo...).
+# Cada módulo añade (función_que_dice_si_está_activo, metadatos).
+OPTIONAL_TOOL_GROUPS = []
+
+
+def available_tools_metadata():
+    tools = list(ALL_TOOLS_METADATA)
+    for enabled, metadata in OPTIONAL_TOOL_GROUPS:
+        try:
+            if enabled():
+                tools.extend(metadata)
+        except Exception:
+            pass
+    return tools
+
+
+# Herramientas nuevas: nombre -> función(**args). ReasoningAgent las ejecuta sin tocar su lista de casos.
+EXTRA_HANDLERS = {
+    "keyboard_actions": keyboard_actions,
+}
 
 # Herramientas que tocan la máquina directamente: bloqueadas desde canales remotos
 # (WhatsApp, teléfono) salvo REMOTE_ALLOW_SYSTEM_TOOLS=true.
 LOCAL_ONLY_TOOLS = {
     "run_system_command", "open_application", "control_system_volume",
     "capture_screen", "analyze_screen", "read_clipboard", "write_clipboard",
+    "keyboard_actions",
 }
 
 __all__ = [
@@ -118,6 +142,10 @@ __all__ = [
     "cancel_reminder",
     "REMINDER_TOOLS_METADATA",
     "LOCAL_ONLY_TOOLS",
+    "EXTRA_HANDLERS",
+    "OPTIONAL_TOOL_GROUPS",
+    "available_tools_metadata",
+    "keyboard_actions",
     "OBSIDIAN_TOOLS_METADATA",
     "CLIPBOARD_TOOLS_METADATA",
     "SEARCH_TOOLS_METADATA",

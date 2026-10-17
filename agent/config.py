@@ -76,6 +76,8 @@ class Config:
         # Obsidian (bóveda = memoria externa de EDITH)
         cls.OBSIDIAN_VAULT_PATH = os.getenv("OBSIDIAN_VAULT_PATH", "").strip() or _default_vault()
         cls.OBSIDIAN_AUTO_SYNC = _flag("OBSIDIAN_AUTO_SYNC", "false")
+        # Fase 2: copiar a la bóveda los diagramas y las notas del día del workspace
+        cls.OBSIDIAN_SAVE_WORKSPACE = _flag("OBSIDIAN_SAVE_WORKSPACE", "true")
 
         # Voz elegida en Ajustes (elvira, dalia, ximena, salome)
         cls.EDITH_VOICE = os.getenv("EDITH_VOICE", "elvira").strip().lower()
@@ -125,6 +127,8 @@ class Config:
         cls.ESCALATE_AFTER_MINUTES = int(os.getenv("ESCALATE_AFTER_MINUTES", "10"))
         cls.HEARTBEAT_NEWS_TOPICS = [t.strip() for t in os.getenv("HEARTBEAT_NEWS_TOPICS", "").split(",") if t.strip()]
         cls.NOTIFY_CHANNELS = [c.strip() for c in os.getenv("NOTIFY_CHANNELS", "ui,toast,whatsapp").split(",") if c.strip()]
+        # Fase 6: aviso de Windows si una respuesta tarda más de esto y no estás mirando EDITH (0 = nunca)
+        cls.LONG_TASK_NOTIFY_SECONDS = _int("LONG_TASK_NOTIFY_SECONDS", 25) or 10 ** 9
 
         # --- Seguridad de la interfaz y la API (Fase 14) ---
         # Nombres o IPs extra con los que se puede llegar a EDITH (Tailscale, IP de la red local...).

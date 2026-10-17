@@ -154,6 +154,12 @@ class Notifier:
             sent["whatsapp"] = send_whatsapp(text)
         return sent
 
+    def toast_if_enabled(self, title: str, message: str) -> bool:
+        """Solo la notificación de Windows, y solo si está activada en «Avisar por» (Fase 6)."""
+        if "toast" not in Config.NOTIFY_CHANNELS:
+            return False
+        return bool(self.notify(title, message, channels=["toast"]).get("toast"))
+
     def call(self, message: str, reminder_id: Optional[str] = None) -> Dict[str, Any]:
         from .telephony import make_call
         return make_call(message, reminder_id=reminder_id)

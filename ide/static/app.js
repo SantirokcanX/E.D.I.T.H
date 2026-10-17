@@ -187,6 +187,16 @@ function playActivationPing() {
   } catch (e) {}
 }
 
+// Fase 6: EDITH avisa con una notificación de Windows si termina algo largo mientras no la miras
+function sendPresence() {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ action: "presence", active: document.visibilityState === "visible" && document.hasFocus() }));
+  }
+}
+document.addEventListener("visibilitychange", sendPresence);
+window.addEventListener("focus", sendPresence);
+window.addEventListener("blur", sendPresence);
+
 // 3. WebSocket Setup
 function initWebSocket() {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -195,6 +205,7 @@ function initWebSocket() {
 
   ws.onopen = () => {
     console.log("[WebSocket] Conectado a EDITH Desktop");
+    sendPresence();
   };
 
   ws.onmessage = (event) => {
@@ -1260,7 +1271,9 @@ function showNextConfirm() {
     return;
   }
   const args = confirmCurrent.args || {};
-  const [title, detail] = CONFIRM_LABELS[confirmCurrent.tool]
+  // Herramientas nuevas: el servidor manda ya el título y el detalle legibles
+  const fromServer = confirmCurrent.title ? [confirmCurrent.title, () => confirmCurrent.detail || ""] : null;
+  const [title, detail] = CONFIRM_LABELS[confirmCurrent.tool] || fromServer
     || [`EDITH quiere usar «${confirmCurrent.tool}»:`, (a) => JSON.stringify(a, null, 2)];
   let text = "";
   try { text = String(detail(args) ?? ""); } catch (e) { text = JSON.stringify(args); }

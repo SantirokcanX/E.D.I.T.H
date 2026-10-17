@@ -19,6 +19,7 @@ os.environ["OLLAMA_WARMUP"] = "false"
 os.environ["HEARTBEAT_ENABLED"] = "false"  # el daemon real no corre: se llama tick() a mano
 os.environ["WHATSAPP_ENABLED"] = "false"
 os.environ["MORNING_BRIEFING_TIME"] = ""  # sin resumen matutino automático (escribiría en una bóveda)
+os.environ["NOTIFY_CHANNELS"] = "ui"  # nunca notificaciones reales de Windows ni WhatsApp
 for var in ("EDITH_API_TOKEN", "EDITH_BRIDGE_SECRET", "EDITH_ALLOWED_HOSTS"):
     os.environ.pop(var, None)
 TMP = Path(tempfile.mkdtemp(prefix="edith_pruebas_"))

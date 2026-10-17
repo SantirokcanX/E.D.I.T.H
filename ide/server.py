@@ -5,6 +5,7 @@ import json
 import os
 import secrets
 import threading
+import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query
@@ -16,6 +17,7 @@ from agent.config import Config
 from agent.paths import APP_DIR, DATA_DIR, FROZEN, VERSION
 from agent.providers import get_provider
 from agent.core.reasoning_agent import ReasoningAgent, AgentCallbacks
+from agent.core.safety import describe_action
 from agent.coworking.team import CoworkingTeam, TeamMemberEvent
 from agent.voice.voice_engine import get_voice_engine
 from agent.memory.memory_manager import get_memory_manager
@@ -24,6 +26,7 @@ from agent.tools.workspace_tools import WORKSPACE_DIR, save_to_workspace, read_w
 from agent.tools.system_tools import (get_system_status, open_application, run_system_command,
                                       control_system_volume, APP_ALIASES)
 from agent.tools.obsidian_tools import get_vault_path, sync_edith_session, search_vault
+from agent.channels.notifier import notifier
 from agent.channels.security import get_api_token
 from agent import ratelimit
 from ide.auth import AccessGuard, access_link_hint
@@ -335,6 +338,8 @@ async def websocket_chat(websocket: WebSocket):
                 fut = pending.get(str(payload.get("id", "")))
                 if fut and not fut.done():
                     fut.set_result(payload.get("approved") is True)
+            elif action == "presence":  # la pestaña dice si la estás mirando (para avisar al terminar)
+                ui_active[websocket] = payload.get("active") is True
             elif action == "query":
                 if not ratelimit.chat.hit("ui:" + ratelimit.client_ip(websocket.scope)):
                     await websocket.send_json({"type": "error", "message": (
@@ -351,6 +356,7 @@ async def websocket_chat(websocket: WebSocket):
             pass
     finally:
         ui_clients.discard(websocket)
+        ui_active.pop(websocket, None)
         for fut in pending.values():  # pestaña cerrada = acción rechazada
             if not fut.done():
                 fut.set_result(False)
@@ -361,7 +367,9 @@ async def _chat_worker(websocket: WebSocket, queries: asyncio.Queue, pending: Di
     while True:
         payload = await queries.get()
         try:
-            await _handle_query(websocket, payload, pending)
+            started = time.monotonic()
+            answer = await _handle_query(websocket, payload, pending)
+            notify_if_away(websocket, answer, time.monotonic() - started)
         except asyncio.CancelledError:
             raise
         except Exception as e:
@@ -378,7 +386,9 @@ async def _ask_confirmation(websocket: WebSocket, pending: Dict[str, asyncio.Fut
     fut = asyncio.get_running_loop().create_future()
     pending[req_id] = fut
     try:
+        title, detail = describe_action(tool, args)
         await websocket.send_json({"type": "confirm_request", "id": req_id, "tool": tool, "args": args,
+                                   "title": title, "detail": detail,
                                    "reason": reason, "timeout": CONFIRM_TIMEOUT_SECONDS})
         return await asyncio.wait_for(fut, CONFIRM_TIMEOUT_SECONDS)
     except Exception:  # sin respuesta a tiempo o pestaña cerrada
@@ -464,7 +474,7 @@ async def _handle_query(websocket: WebSocket, payload: Dict[str, Any], pending: 
         })
         if speak_response and voice_engine.enabled and result.get("answer"):
             await send_voice(websocket, result["answer"])
-        return
+        return result.get("answer") or ""
 
     def on_iteration_start(it: int):
         asyncio.run_coroutine_threadsafe(
@@ -532,10 +542,24 @@ async def _handle_query(websocket: WebSocket, payload: Dict[str, Any], pending: 
     })
     if speak_response and voice_engine.enabled and res.answer:
         await send_voice(websocket, res.answer)
+    return res.answer or ""
 
 
 # ---------- Fases 9-11: canales remotos, notificaciones y Heartbeat ----------
 ui_clients: set = set()
+ui_active: Dict[Any, bool] = {}  # pestaña -> ¿la estás mirando? (Fase 6)
+
+
+def any_ui_active() -> bool:
+    return any(ui_active.get(ws, True) for ws in list(ui_clients))
+
+
+def notify_if_away(websocket, answer: Optional[str], elapsed: float):
+    """Fase 6: si una respuesta tardó y no estabas mirando EDITH, aviso de Windows al terminar."""
+    if not answer or elapsed < Config.LONG_TASK_NOTIFY_SECONDS or ui_active.get(websocket, True):
+        return
+    text = " ".join(answer.split())
+    notifier.toast_if_enabled("Terminé tu tarea", (text[:160] + "…") if len(text) > 160 else text)
 
 
 async def broadcast_ui(event: dict):

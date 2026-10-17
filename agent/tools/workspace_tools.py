@@ -30,7 +30,16 @@ def save_to_workspace(filename: str, content: str) -> str:
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             f.write(content)
-        return f"Archivo guardado exitosamente en workspace: '{filename}' ({len(content)} caracteres)."
+        msg = f"Archivo guardado exitosamente en workspace: '{filename}' ({len(content)} caracteres)."
+        if path.name.lower() == "notas_del_dia.md":
+            try:
+                from .obsidian_tools import mirror_daily_notes
+                note = mirror_daily_notes(content)
+                if note:
+                    msg += f" También quedó en Obsidian: {note}."
+            except Exception as e:  # la bóveda nunca debe impedir guardar en el workspace
+                msg += f" (No se pudo copiar a Obsidian: {e})"
+        return msg
     except Exception as e:
         return f"Error al guardar archivo en workspace: {str(e)}"
 

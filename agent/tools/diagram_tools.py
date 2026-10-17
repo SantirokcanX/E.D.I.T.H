@@ -26,7 +26,15 @@ def save_diagram(title: str, diagram_type: str, code: str) -> str:
         filename = f"{clean_title}.txt"
 
     res = save_to_workspace(filename, code)
-    return f"Diagrama guardado en workspace como '{filename}'. Se renderiza automáticamente en la pestaña de Diagramas."
+    msg = f"Diagrama guardado en workspace como '{filename}'. Se renderiza automáticamente en la pestaña de Diagramas."
+    try:
+        from .obsidian_tools import mirror_diagram
+        note = mirror_diagram(title, diagram_type, code)
+        if note:
+            msg += f" También quedó en Obsidian: {note}."
+    except Exception as e:  # la bóveda nunca debe impedir guardar el diagrama
+        msg += f" (No se pudo copiar a Obsidian: {e})"
+    return msg
 
 
 DIAGRAM_TOOLS_METADATA = [

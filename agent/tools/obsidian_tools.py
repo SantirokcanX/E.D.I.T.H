@@ -239,6 +239,50 @@ def search_vault(query: str, max_results: int = 8) -> List[Dict[str, Any]]:
     return results[:max_results]
 
 
+DIAGRAMS_FOLDER = "03 - Conocimiento/Diagramas"
+
+
+def _vault_ready() -> Optional[Path]:
+    """La bóveda solo si existe y la copia está activada: nunca se crea una bóveda que no tienes."""
+    if not Config.OBSIDIAN_SAVE_WORKSPACE:
+        return None
+    vault = get_vault_path()
+    return vault if vault.is_dir() else None
+
+
+def mirror_daily_notes(content: str) -> Optional[str]:
+    """Fase 2: workspace/notas_del_dia.md -> 01 - Diario/AAAA-MM-DD - Notas del día.md (se reescribe)."""
+    vault = _vault_ready()
+    if not vault:
+        return None
+    title = f"{datetime.now().strftime('%Y-%m-%d')} - Notas del día"
+    path = _note_path(title, DIARY_FOLDER)
+    body = content if content.lstrip().startswith("---") else _frontmatter(["edith", "notas-del-dia"]) + content
+    _write_note(path, body.rstrip() + "\n")
+    return str(path.relative_to(vault)).replace("\\", "/")
+
+
+def mirror_diagram(title: str, diagram_type: str, code: str) -> Optional[str]:
+    """Fase 2: cada diagrama también como nota en 03 - Conocimiento/Diagramas (Obsidian dibuja Mermaid)."""
+    vault = _vault_ready()
+    if not vault:
+        return None
+    name = _safe_name(title.replace("_", " ").strip() or "Diagrama")
+    path = _note_path(name, DIAGRAMS_FOLDER)
+    head = _frontmatter(["edith", "diagrama"]) + f"# {name}\n\n"
+    if diagram_type == "mermaid":
+        body = head + f"```mermaid\n{code.strip()}\n```\n"
+    elif diagram_type == "svg":
+        svg = path.with_suffix(".svg")
+        svg.parent.mkdir(parents=True, exist_ok=True)
+        svg.write_text(code, encoding="utf-8")
+        body = head + f"![[{svg.name}]]\n"
+    else:
+        body = head + "Gráfica de Chart.js: ábrela en EDITH para verla.\n\n" + f"```json\n{code.strip()}\n```\n"
+    _write_note(path, body)
+    return str(path.relative_to(vault)).replace("\\", "/")
+
+
 def session_to_markdown(session: Dict[str, Any]) -> str:
     """Convierte una sesión guardada de EDITH en una nota legible de Obsidian."""
     created = session.get("created_at", "")[:16].replace("T", " ")

@@ -5,17 +5,17 @@ Flujo saliente:  notificaciones -> send_whatsapp() -> POST {bridge}/send (con cl
 """
 
 import base64
-import json
 import re
 import secrets
 import threading
 import unicodedata
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional
 
 import httpx
 
 from .. import ratelimit
 from ..config import Config
+from ..core.safety import describe_action
 from ..tools.reminder_tools import ack_reminder
 from .conversations import get_channel_agent, reset_channel_agent
 from .security import canonical_number, get_bridge_secret, is_authorized
@@ -33,22 +33,14 @@ _pending: Dict[str, Dict[str, Any]] = {}  # número -> {"code", "event", "approv
 _pending_lock = threading.Lock()
 
 
-def _describe_action(tool_name: str, args: Dict[str, Any]) -> Tuple[str, str]:
-    if tool_name == "run_system_command":
-        return "ejecutar en PowerShell", str(args.get("command", ""))
-    if tool_name == "open_application":
-        return "abrir una aplicación", str(args.get("app_name", ""))
-    return f"usar «{tool_name}»", json.dumps(args, ensure_ascii=False)
-
-
 def confirm_via_whatsapp(sender: str) -> Callable[[str, Dict[str, Any], str], bool]:
     """on_confirm del agente: pregunta por WhatsApp y espera "SI <código>" (o "NO") del mismo número."""
     def on_confirm(tool_name: str, args: Dict[str, Any], reason: str) -> bool:
-        action, detail = _describe_action(tool_name, args)
+        title, detail = describe_action(tool_name, args)
         entry = {"code": f"{secrets.randbelow(9000) + 1000}", "event": threading.Event(), "approved": False}
         with _pending_lock:
             _pending[sender] = entry
-        text = (f"🔐 *EDITH quiere {action} en la laptop:*\n```{detail[:400]}```\n"
+        text = (f"🔐 *{title.rstrip(':')} (en la laptop):*\n```{detail[:400]}```\n"
                 + (f"_{reason}_\n" if reason else "")
                 + f"Responde *SI {entry['code']}* para autorizar o *NO* para cancelar (caduca en 2 min).")
         if not send_whatsapp(text=text, to=sender):
