@@ -10,15 +10,15 @@ tags:
   - laptop-control
   - obsidian-sync
 created: 2026-10-15
-updated: 2026-10-16
-version: 0.0.9
+updated: 2026-10-17
+version: 0.1.0
 status: en-desarrollo
 ---
 
 # 👓 Plan Maestro y Hoja de Ruta: E.D.I.T.H.
 
 > [!info] Estado del Sistema
-> **E.D.I.T.H.** (Enhanced Dialectical Intelligence & Tactical Heuristics) está en la versión **0.0.10**: ya habla por **WhatsApp (texto y notas de voz)**, contesta y hace **llamadas telefónicas** (Twilio) y tiene **iniciativa propia** (recordatorios, alarmas que escalan a llamada, salud de la laptop, tareas de Obsidian y resumen matutino). Todo sobre su motor dual Qwen3 (100 % GPU, ~1 s), LaTeX, visión de pantalla y Obsidian. Desde la **v0.0.6** es una app de escritorio y la **v0.0.7** protege la interfaz y la API con token y pide tu permiso antes de ejecutar comandos. La **v0.0.8** se configura sola la primera vez (asistente que mira tu GPU y descarga los modelos) y todo se cambia en ⚙️ Ajustes, sin editar `.env`. Desde la **v0.0.9** se empaqueta como `EDITH.exe`, que funciona sin la carpeta del proyecto ni Python, con WhatsApp incluido sin necesidad de Node. En la **v0.0.10** cada voz vuelve a sonar distinta, llega la voz **«Viernes»** y **«Oye EDITH»** funciona dentro de la app, transcrito en local con Whisper.
+> **E.D.I.T.H.** (Enhanced Dialectical Intelligence & Tactical Heuristics) está en la versión **0.1.0**: ya habla por **WhatsApp (texto y notas de voz)**, contesta y hace **llamadas telefónicas** (Twilio) y tiene **iniciativa propia** (recordatorios, alarmas que escalan a llamada, salud de la laptop, tareas de Obsidian y resumen matutino). Todo sobre su motor dual Qwen3 (100 % GPU, ~1 s), LaTeX, visión de pantalla y Obsidian. Desde la **v0.0.6** es una app de escritorio y la **v0.0.7** protege la interfaz y la API con token y pide tu permiso antes de ejecutar comandos. La **v0.0.8** se configura sola la primera vez (asistente que mira tu GPU y descarga los modelos) y todo se cambia en ⚙️ Ajustes, sin editar `.env`. Desde la **v0.0.9** se empaqueta como `EDITH.exe`, que funciona sin la carpeta del proyecto ni Python, con WhatsApp incluido sin necesidad de Node. En la **v0.0.10** cada voz vuelve a sonar distinta, llega la voz **«Viernes»** y **«Oye EDITH»** funciona dentro de la app, transcrito en local con Whisper. La **v0.1.0** completa todo lo que no depende del servidor: teclado, navegador propio, Home Assistant, calendario y correo, fotos y documentos por WhatsApp, LaTeX numerado, ▶ Ejecutar y el instalador `EDITH-Setup.exe`.
 >
 > Pendiente inmediato: **Fase 8** (servidor 24/7 + URL pública), que es lo que permite que Twilio llegue a EDITH y que WhatsApp funcione con la laptop cerrada. Su requisito de seguridad (Fase 14) ya está listo en v0.0.7.
 >
@@ -117,19 +117,19 @@ timeline
     title Calendario de Evolución Táctica de EDITH
     Fase 1 : Visión de Pantalla (Completado)
     Fase 2 : Integración Nativa con Obsidian (Completado)
-    Fase 3 : Oye EDITH con Whisper local (v0.0.10) y micrófono nativo (Pendiente)
+    Fase 3 : Oye EDITH con Whisper local (v0.0.10) y ventana desde la bandeja (v0.1.0)
     Fase 4 : Voz 100% Offline SAPI5 (Completado)
-    Fase 5 : Portapapeles (Completado) y Automatización de teclado (Pendiente)
-    Fase 6 : Atajo Global de Teclado y Toasts (Casi completa)
+    Fase 5 : Portapapeles y Automatización de teclado (Completado, v0.1.0)
+    Fase 6 : Atajo Global de Teclado y Toasts (Completado, v0.1.0)
     Fase 7 : LaTeX y bloques de código nivel IA avanzada (Completado)
     Fase 8 : Servidor Dedicado 24-7 PC de Escritorio (En configuración)
     Fase 9 : WhatsApp Táctico Mensajes y Notas de Voz (Completado)
     Fase 10 : Telefonía y Llamadas de Voz (Completado, falta URL pública)
-    Fase 11 : Autonomía Proactiva Heartbeat Daemon (Completado)
-    Fase 12 : Navegación Web Interactiva Playwright (Planificado)
-    Fase 13 : Ojos al Mundo Real Webcam Vision e IoT (Planificado)
-    Fase 14 : Endurecimiento de Seguridad (Núcleo completado, v0.0.7)
-    Fase 15 : EDITH Setup - App de Escritorio Instalable (En marcha, 15.1 a 15.3 listas)
+    Fase 11 : Autonomía Proactiva Heartbeat, calendario y correo (Completado, v0.1.0)
+    Fase 12 : Navegación Web Interactiva Playwright (Completado, v0.1.0)
+    Fase 13 : Ojos al Mundo Real Webcam Vision e IoT (Home Assistant v0.1.0, webcam con el servidor)
+    Fase 14 : Endurecimiento de Seguridad (Completado, v0.1.0)
+    Fase 15 : EDITH Setup - App de Escritorio Instalable (15.1 a 15.5, v0.1.0)
 ```
 
 ### ✅ Fase 2: Integración Profunda con Obsidian
@@ -146,7 +146,7 @@ timeline
   - `00 - Dashboard/` · `01 - Diario/` · `02 - Proyectos/` · `03 - Conocimiento/` · `04 - Memoria EDITH/`
 - [x] **Sincronización automática** opcional: `OBSIDIAN_AUTO_SYNC=true` en `.env` archiva cada conversación al terminar el turno (en segundo plano).
 - [x] Ruta de la bóveda configurable con `OBSIDIAN_VAULT_PATH`.
-- [ ] Guardar `workspace/notas_del_dia.md` y los diagramas directamente en la bóveda.
+- [x] Guardar `workspace/notas_del_dia.md` y los diagramas directamente en la bóveda (Diario y `03 - Conocimiento/Diagramas`) (v0.1.0).
 
 ### 🟡 Fase 3: Micrófono Nativo y «Oye EDITH» (Hot-Mic) — v0.0.10
 > [!success] «Oye EDITH» funciona en la app (v0.0.10)
@@ -156,8 +156,8 @@ timeline
 - [x] Orden en la misma frase («Oye EDITH, abre la calculadora») o en dos pasos (pitido → «Te escucho…» durante 8 s).
 - [x] No se activa con palabras parecidas («editar», «Meredith») ni con su propia voz; tres sensibilidades en ⚙️ Ajustes › Voz.
 - [x] Reintentos solos si el micrófono falta, se desconecta o está ocupado; pausar suelta el micrófono.
-- [ ] Captura directa del micrófono en Python, sin pasar por WebView2 (hoy depende de su permiso, que la app recuerda).
-- [ ] Mostrar la ventana si «Oye EDITH» se activa con la app oculta en la bandeja.
+- [ ] Captura directa del micrófono en Python, sin pasar por WebView2 (hoy depende de su permiso, que la app recuerda). *En pausa: con la app en la bandeja, WebView2 sigue escuchando y el permiso se recuerda (v0.1.0).*
+- [x] Mostrar la ventana si «Oye EDITH» se activa con la app oculta en la bandeja (v0.1.0).
 
 ### ✅ Fase 4: Voz 100% Offline (Fallback SAPI5)
 - [x] Si `edge-tts` falla o no hay internet (espera máx. 20 s), EDITH habla con la voz de Windows (SAPI5, prefiere voz en español) → nunca se queda muda. Se controla con `VOICE_OFFLINE_FALLBACK`.
@@ -166,13 +166,13 @@ timeline
 ### 🟡 Fase 5: Portapapeles & Control de Laptop (*Computer Use*)
 - [x] `read_clipboard`: *"EDITH, explica lo que acabo de copiar"*.
 - [x] `write_clipboard`: EDITH te deja un texto listo para `Ctrl+V` (acentos y emojis incluidos).
-- [ ] Automatización de teclado para tareas repetitivas.
+- [x] Automatización de teclado para tareas repetitivas: `keyboard_actions`, una sola confirmación para toda la secuencia (v0.1.0).
 
 ### 🟡 Fase 6: Atajo Global de Invocación & Notificaciones Toast
 - [x] Hotkey global `Win + Shift + E` para mostrar/ocultar EDITH desde cualquier programa (v0.0.6, configurable con `EDITH_HOTKEY`).
 - [x] Los avisos aparecen como **EDITH** con su logo, no como "Windows PowerShell" (v0.0.6).
 - [x] Notificaciones nativas de Windows (toast) para recordatorios y alertas del Heartbeat (v0.0.5).
-- [ ] Toast al terminar tareas largas en segundo plano (Co-Working, descargas).
+- [x] Toast al terminar tareas largas (chat, Co-Working, descargas de modelos) si no estás mirando EDITH (v0.1.0).
 
 ### ✅ Fase 7: Matemáticas en LaTeX y Código de Nivel Profesional
 > [!tip] Objetivo
@@ -184,7 +184,7 @@ timeline
 - [x] Instruir a EDITH en el prompt de sistema: toda expresión matemática en LaTeX, p. ej. $E = mc^2$ o
   $$\int_0^1 x^2\,dx = \frac{1}{3}$$
 - [x] Entornos `aligned`, `cases`, `matrix` para desarrollos paso a paso (KaTeX).
-- [ ] Ecuaciones numeradas y referencias cruzadas.
+- [x] Ecuaciones numeradas y referencias cruzadas (`\label`, `\eqref`, `\ref`) (v0.1.0).
 - [x] Botón para **copiar la fórmula en LaTeX** (útil para pegarla en Obsidian, que también usa MathJax).
 - [x] La voz debe leer las fórmulas en lenguaje natural ("x al cuadrado"), no los comandos LaTeX.
 - [x] Al exportar a Obsidian, conservar `$...$` tal cual: Obsidian las renderiza nativamente.
@@ -193,8 +193,8 @@ timeline
 - [x] Resaltado de sintaxis con **highlight.js** según el lenguaje del bloque (` ```python `).
 - [x] Cabecera de cada bloque con el **nombre del lenguaje** y botón **📋 Copiar**.
 - [x] Botón **💾 Guardar en workspace**.
-- [ ] Botón **▶ Ejecutar** (para Python, con confirmación).
-- [ ] Números de línea y ajuste de líneas largas opcional.
+- [x] Botón **▶ Ejecutar** (para Python, con confirmación y solo desde esta computadora) (v0.1.0).
+- [x] Números de línea y ajuste de líneas largas opcional (v0.1.0).
 - [x] `código en línea` con estilo monoespaciado diferenciado.
 
 **Detalles finos**
@@ -230,7 +230,7 @@ timeline
 - [x] **Alertas proactivas por WhatsApp**: recordatorios, alarmas críticas ("responde *ok* o te llamo") y resumen matutino (Fase 11).
 - [x] Conversación propia por contacto que aparece en el historial; `/nuevo` empieza otra.
 - [x] **Seguridad**: lista blanca obligatoria (`AUTHORIZED_PHONE_NUMBERS`), silencio total con desconocidos, API del bridge solo en `127.0.0.1` con clave compartida, sin PowerShell/apps/pantalla desde WhatsApp.
-- [ ] Imágenes y documentos por WhatsApp (hoy: texto y notas de voz).
+- [x] Imágenes y documentos por WhatsApp: fotos (visión local), PDF, Word y texto (v0.1.0).
 - [ ] Probar con un número secundario real (requiere escanear el QR).
 
 ### ✅ Fase 10: Llamadas Telefónicas Bidireccionales (Twilio Voice) — v0.0.5
@@ -242,8 +242,8 @@ timeline
 - [x] **Llamadas entrantes, modo `relay`** (tiempo real con ConversationRelay): la respuesta se transmite token a token. Requiere activar ConversationRelay en la consola de Twilio.
 - [x] **Seguridad**: firma `X-Twilio-Signature` verificada en cada webhook, números desconocidos rechazados **sin contestar** (no cuesta), token de un solo uso por llamada.
 - [ ] **Activar en producción**: requiere `PUBLIC_BASE_URL` (Fase 8) y credenciales de Twilio en `.env`.
-- [ ] Llamadas delegadas ("llama al restaurante y pregunta el horario").
-- [ ] Voz propia de EDITH en llamadas (hoy usa voces de Twilio: Polly/Google).
+- [ ] Llamadas delegadas ("llama al restaurante y pregunta el horario"). *(requiere la URL pública de la Fase 8)*
+- [ ] Voz propia de EDITH en llamadas (hoy usa voces de Twilio: Polly/Google). *(requiere la URL pública de la Fase 8)*
 
 ### ✅ Fase 11: Autonomía Proactiva (Heartbeat Daemon) — v0.0.5
 > [!tip] Objetivo
@@ -256,14 +256,14 @@ timeline
 - [x] **Salud de la laptop**: batería baja sin cargador, CPU al máximo sostenida, disco casi lleno.
 - [x] **Resumen matutino** (`MORNING_BRIEFING_TIME`): redactado por EDITH, enviado a WhatsApp/interfaz y guardado en `01 - Diario/`. Noticias opcionales (`HEARTBEAT_NEWS_TOPICS`).
 - [x] **Horas de silencio** (`QUIET_HOURS`): de noche solo pasan los avisos críticos.
-- [ ] Calendario (Google/Outlook) y correo: requieren conectar tus cuentas (OAuth/IMAP).
+- [x] Calendario (enlaces iCal de Google u Outlook) y correo IMAP de solo lectura; agenda y correos sin leer en el resumen matutino (v0.1.0).
 
 ### 🌐 Fase 12: Navegación Web Interactiva (*Computer Use / Playwright*)
-- [ ] Automatización de navegador Chromium headless con Playwright: iniciar sesión, llenar formularios, descargar PDFs y comparar precios.
+- [x] Automatización de navegador con Playwright y el Edge instalado: formularios, descargas de PDF y comparar precios; botones y descargas con permiso, contraseñas nunca (v0.1.0).
 
 ### 👁️ Fase 13: Ojos en el Mundo Real (Webcam Vision & IoT)
-- [ ] Conexión con cámara web: reconocimiento facial al sentarte en el escritorio y análisis visual de objetos físicos.
-- [ ] Integración con Home Assistant: control de luces y enchufes inteligentes.
+- [ ] Conexión con cámara web: reconocimiento facial al sentarte en el escritorio y análisis visual de objetos físicos. *(cuando la webcam esté en el servidor)*
+- [x] Integración con Home Assistant: luces, enchufes, clima y escenas; nunca cerraduras ni alarmas (v0.1.0).
 
 ### 🛡️ Fase 14: Endurecimiento de Seguridad
 > [!success] Requisito de la Fase 8: listo (v0.0.7)
@@ -278,11 +278,11 @@ timeline
 - [x] Marcar el contenido de webs y archivos como "dato no confiable" para que no dé órdenes a EDITH; tras leerlo, las acciones sensibles piden confirmación (v0.0.7).
 - [x] Sanitizar el HTML que genera el modelo antes de mostrarlo (DOMPurify 3.4.16 con SRI; imágenes externas bloqueadas) (v0.0.7).
 - [x] Sacar `data/sessions/` del repositorio de git (contiene tus conversaciones) (v0.0.7).
-- [ ] Content-Security-Policy completa (quitar los `onclick` en línea de la interfaz).
-- [ ] Fijar la versión de `marked`, `mermaid` y `chart.js` en el CDN.
-- [ ] Confirmación por WhatsApp para comandos pedidos desde remoto.
-- [ ] Límite de peticiones por minuto y cifrado de secretos con DPAPI.
-- [ ] Sacar también `data/memory/` y `data/audio/` del repositorio.
+- [x] Content-Security-Policy completa (sin `onclick` en línea ni scripts de CDN) (v0.1.0).
+- [x] Versiones fijas de todas las librerías, en copia local verificada (`ide/static/vendor`) (v0.1.0).
+- [x] Confirmación por WhatsApp para comandos pedidos desde remoto («SI <código>») (v0.1.0).
+- [x] Límite de peticiones por minuto y cifrado de secretos con DPAPI (v0.1.0).
+- [x] Sacar también `data/memory/`, `data/audio/` y `data/learnings/` del repositorio (v0.1.0).
 - [x] Sacar de git la configuración de los plugins de Obsidian (`.obsidian/plugins/*/data.json`) (v0.0.8).
 - [ ] **Regenerar la API key y los certificados del plugin Local REST API**: se publicaron en GitHub con el commit `7446bb0`.
 
@@ -327,19 +327,19 @@ timeline
 - [x] Modo empaquetado: `.env` y datos en `%LOCALAPPDATA%\EDITH`, interfaz e iconos dentro del paquete; numpy, scikit-learn, faster-whisper, PyAV, pygame y edge-tts comprobados dentro del `.exe`.
 - [x] Pruebas en `tests/test_fase_15_3.py` (23 casos) y con la app empaquetada real en `--tray` (12/12).
 
-**15.4 · Instalador `EDITH-Setup.exe` (Inno Setup)**
-- [ ] Instalación por usuario, sin permisos de administrador.
-- [ ] Detecta Ollama y, si falta, lo instala con el instalador oficial.
-- [ ] Accesos directos en Escritorio y menú Inicio; opción "Iniciar con Windows" (ya existe en Ajustes desde la v0.0.8).
-- [ ] Componente opcional "WhatsApp".
-- [ ] Desinstalador que pregunta si conservar conversaciones y ajustes.
+**✅ 15.4 · Instalador `EDITH-Setup.exe` (Inno Setup) — v0.1.0**
+- [x] Instalación por usuario, sin permisos de administrador (v0.1.0).
+- [x] Detecta Ollama y, si falta, lo descarga e instala con el instalador oficial (v0.1.0).
+- [x] Accesos directos en Escritorio y menú Inicio; opción "Iniciar con Windows" (v0.1.0).
+- [x] Componente opcional "WhatsApp" (v0.1.0).
+- [x] Desinstalador que pregunta si conservar conversaciones y ajustes («No» por defecto) (v0.1.0).
 
-**15.5 · Actualizaciones y distribución**
-- [ ] Aviso de versión nueva y actualización conservando datos.
-- [ ] Decidir firma de código (SmartScreen avisará si no se firma).
+**15.5 · Actualizaciones y distribución** (aviso de versiones listo en v0.1.0)
+- [x] Aviso de versión nueva (releases de GitHub) y actualización conservando datos (v0.1.0).
+- [ ] Decidir firma de código (SmartScreen avisará si no se firma). *Decisión pendiente: opciones en [[Diseño de EDITH Setup (Aplicación de Escritorio)]].*
 - [ ] Modo *cliente de mi servidor* (requiere Fases 8 y 14).
 - [x] Enlace de acceso para otros dispositivos desde la app: ⚙️ Ajustes › Avanzado › «Copiar enlace para otro dispositivo» y `EDITH.exe --access-link` (v0.0.9).
-- [ ] Prueba completa en una cuenta de Windows nueva o máquina virtual.
+- [ ] Prueba completa en una cuenta de Windows nueva o máquina virtual. *En esta PC: instalación y desinstalación silenciosas en carpeta temporal, 14/14 (v0.1.0); falta una cuenta limpia.*
 
 > [!warning] Dependencias
 > Antes de construir el instalador: sacar `data/sessions/` de git (Fase 14, hecho en v0.0.7). Para el modo cliente: Fases 8 y 14. Tamaño medido en la v0.0.9, sin comprimir: 401 MB (`dist\EDITH`) + 97 MB del bridge opcional; los modelos (~5 GB) se descargan aparte.
@@ -354,7 +354,7 @@ timeline
 
 **Siguientes ideas de velocidad**
 - [ ] Evitar el cambio de modelo (~6-8 s) si algún día ambos caben juntos (más VRAM o un modelo híbrido que respete `think=false`).
-- [ ] Clasificar "pensar a fondo" con el enrutador ML en vez de solo palabras clave, aprendiendo de cuándo el usuario pulsa 🔬 Profundo.
+- [x] Clasificar "pensar a fondo" aprendiendo de cuándo el usuario pulsa 🔬 Profundo o ⚡ Rápido (v0.1.0).
 
 ---
 
@@ -364,4 +364,4 @@ timeline
 - `01 - Diario/`: conversaciones archivadas desde EDITH.
 
 ---
-*Actualizado el 16/10/2026 - versión 0.0.9.*
+*Actualizado el 17/10/2026 - versión 0.1.0.*

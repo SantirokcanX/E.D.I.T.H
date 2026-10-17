@@ -13,6 +13,93 @@ Bitácora técnica de cada versión. Plan general: [[Plan de Cambios y Evolució
 
 ---
 
+## v0.1.0 — 17/10/2026 · Todo lo que faltaba, menos el servidor
+Pedido de Diego: «haz todo lo que falta menos lo del servidor». Queda fuera lo que necesita la PC servidor (Fase 8): la URL pública de las llamadas, las llamadas delegadas, el modo cliente y la webcam (Diego la conectará al servidor). Commits `bb3428d` a `09b6323` en `main`, encima de la v0.0.10 (voces y «Oye EDITH», `a471a60`).
+
+> [!success] En una frase
+> EDITH ya escribe por ti en cualquier ventana, navega webs con su propio Edge, maneja tu casa con Home Assistant, lee tu calendario y tu correo, entiende fotos y documentos por WhatsApp, te avisa cuando termina algo largo y se instala con un `EDITH-Setup.exe`. Y todo con más candados: secretos cifrados, límites, permiso por WhatsApp y una CSP estricta.
+
+### 🛡️ Fase 14 completa
+- **Secretos cifrados con DPAPI** (`agent/secret_store.py`, sin dependencias): el token de acceso, la clave del bridge y los secretos que guardas en Ajustes (Auth Token de Twilio, token de Home Assistant, enlaces iCal, contraseña del correo) van en disco como `dpapi:…`. Solo tu cuenta de Windows en esta PC los lee. Los archivos viejos en claro se cifran solos al leerlos. El bridge recibe su clave por variable de entorno.
+- **Límite de peticiones** (`agent/ratelimit.py`): desde otro dispositivo, 240 peticiones/min; tokens incorrectos, 10/min por IP y luego `429` con `Retry-After` (en la laptop una cookie vieja no bloquea); consultas al modelo, 20/min por cliente (chat y WhatsApp). Se cambian en `.env`.
+- **Confirmación por WhatsApp**: con `REMOTE_ALLOW_SYSTEM_TOOLS=true`, cada acción sensible pedida desde el celular manda *«🔐 EDITH quiere ejecutar…: responde SI 4821 o NO»*. Un «sí» suelto o con otro código no vale; sin respuesta en 2 min se rechaza. Desde una llamada se sigue rechazando.
+- **CSP estricta**: `script-src 'self'` (sin scripts en línea, sin `eval`, sin CDN). Las librerías viven en `ide/static/vendor/` con versión fija y huella SHA-256 verificada contra jsdelivr (`build/vendor_libs.py`, `MANIFEST.json`): marked 15.0.12, DOMPurify 3.4.16, KaTeX 0.16.11, highlight.js 11.9.0, Mermaid 10.9.8, Chart.js 4.5.1 y las fuentes. **La interfaz ya funciona sin internet.** (La URL sin versión de `marked` en realidad servía la 15.0.12.)
+- `data/memory/`, `data/audio/` y `data/learnings/` salen de git (siguen en disco).
+
+### ⌨️ Fase 5 · Teclado
+`keyboard_actions`: escribe texto (acentos, ñ, emojis) y pulsa atajos en una ventana por su título. Todos los pasos se autorizan **de una vez**; si cambias de ventana a mitad, EDITH se detiene; nunca escribe en su propia ventana. Solo desde la laptop.
+
+### 🔔 Fase 6 · Aviso al terminar
+La pestaña avisa si la estás mirando. Si una respuesta tarda más de 25 s (`LONG_TASK_NOTIFY_SECONDS`) y no la mirabas, llega una notificación de Windows con el principio de la respuesta. Igual al terminar de descargar modelos. Respeta «Avisar por» de Ajustes.
+
+### 💎 Fase 2 · Bóveda
+Cada diagrama se copia como nota a `03 - Conocimiento/Diagramas` (Obsidian dibuja Mermaid) y `notas_del_dia.md` al Diario de hoy (`AAAA-MM-DD - Notas del día`). Si no tienes bóveda no se crea nada. Se apaga en Ajustes › Obsidian.
+
+### 🌐 Fase 12 · Navegador propio
+EDITH maneja un **Microsoft Edge propio** con Playwright (perfil en `%LOCALAPPDATA%\EDITH\browser`, sin ventana). Ve cada página como texto + elementos numerados.
+- Leer, seguir enlaces y rellenar campos: sin preguntar. **Pulsar botones y descargar: siempre con tu permiso** (el aviso dice qué botón y en qué página).
+- **Nunca escribe contraseñas, códigos ni datos de tarjeta**: abre la ventana (`browser_show`) para que los escribas tú.
+- Lo que lee de la web es dato no confiable. Para ahorrar contexto al modelo, solo `browser_open` está siempre a la vista; el resto aparece con una página abierta.
+
+### 🏠 Fase 13 · Home Assistant
+Luces, enchufes, ventiladores, clima, reproductores y escenas (Ajustes › Casa y cuentas: dirección y token de larga duración). **Nunca cerraduras, alarmas, garajes ni persianas.** Tras leer una web o un correo, manejar la casa pide permiso. La **webcam** queda para cuando Diego la conecte al servidor.
+
+### 📅 Fase 11 · Calendario y correo
+- **Calendario**: enlaces iCal de Google u Outlook (también `webcal://`), con eventos repetidos.
+- **Correo IMAP de solo lectura** con contraseña de aplicación: abre el buzón con `EXAMINE` y lee con `BODY.PEEK`, así que **no marca, no borra, no envía**.
+- El **resumen matutino** suma tu agenda de hoy y los correos sin leer (como datos: no sigue instrucciones que traigan).
+
+### 📷 Fase 9 · Fotos y documentos por WhatsApp
+- Mándale una **foto** con una pregunta (o sin texto: la describe) o un **PDF, Word o texto** (sin texto: lo resume). Máximo 10 MB.
+- El documento queda en `workspace/recibidos`. Lo que trae se marca como no confiable y las acciones sensibles de ese turno piden permiso.
+- **Visión local**: `agent/vision.py` usa un modelo de Ollama (`VISION_MODEL`, por defecto `qwen3-vl:4b`, unos 3 GB) y Gemini como respaldo. `analyze_screen` también prueba primero el local. **Falta descargar el modelo** (Ajustes › Modelos de IA); sin él, EDITH lo dice en vez de inventar.
+
+### 🧠 Razonamiento que aprende de ti
+Cada vez que eliges 🔬 Profundo o ⚡ Rápido, un clasificador en línea aprende. En modo automático solo **añade** casos a la heurística, tras 5 elecciones tuyas y con certeza ≥ 0.75.
+
+### 🧮 Fase 7 · LaTeX y código
+- `\label{…}` + `\eqref{…}`/`\ref{…}` numeran y citan ecuaciones como en LaTeX; los entornos `equation`/`align` sueltos también se dibujan. Una cita rota sale «(??)».
+- Cada bloque de código tiene **#** (números de línea) y **↩** (ajustar líneas); la preferencia se recuerda. El resaltado no se rompe en cadenas de varias líneas.
+- **▶ Ejecutar** en bloques Python: te muestra el código y pide confirmación; corre en `workspace/ejecuciones`, 30 s como máximo, sin los secretos de EDITH y **solo desde esta computadora**. En `EDITH.exe` usa su propio intérprete (`--run-python`).
+
+### 🎙️ «Oye EDITH» con la app en la bandeja
+Si la ventana está oculta y dices «Oye EDITH», la ventana aparece para que veas la respuesta.
+
+### 📦 Fase 15.4 · `EDITH-Setup.exe` (Inno Setup 6)
+- `build\build_setup.ps1` ahora también compila `dist\EDITH-Setup-0.1.0.exe` (168 MB).
+- **Instalación**: por usuario y sin administrador, en `%LOCALAPPDATA%\Programs\EDITH`.
+- **Opcional**: WhatsApp, acceso directo, «Iniciar con Windows» y **descargar Ollama del sitio oficial si falta**.
+- **Antes de instalar o desinstalar** cierra EDITH con su evento.
+- **Al desinstalar** pregunta si borrar tus datos (**«No» por defecto; en silencio nunca**) y quita el inicio con Windows si apuntaba a esa instalación.
+
+### 🔄 Fase 15.5 · Actualizaciones
+La app instalada mira una vez al día el último *release* en GitHub (`SantirokcanX/E.D.I.T.H`). Si hay versión nueva, avisa con **Descargar / Ahora no**. Instalar encima reemplaza solo el programa: tus conversaciones y ajustes se conservan. Se apaga en Ajustes › Avanzado.
+
+### 🧪 Pruebas
+| Suite | Resultado |
+|---|---|
+| `test_seguridad_extra.py` (DPAPI, límites, WhatsApp, datos fuera de git) | 44/44 |
+| `test_teclado_avisos.py` (teclado simulado, avisos, bóveda) | 37/37 |
+| `test_navegador.py` (Edge real sin ventana contra una tienda local) | 25/25 |
+| `test_integraciones.py` (Home Assistant, iCal e IMAP simulados) | 39/39 |
+| `test_whatsapp_media.py` (PDF y Word reales, visión simulada, aprendizaje) | 31/31 |
+| `test_interfaz.py` (CSP, librerías locales, ▶ Ejecutar) | 32/32 |
+| `test_actualizaciones.py` (GitHub simulado y script del instalador) | 29/29 |
+| Anteriores: voz 67, 15.3 48, 15.2 65, seguridad 78, Fases 9-11 55 | 313/313 |
+| **Total** | **550/550** |
+
+- **Navegador integrado (CSP activa)**: KaTeX, Mermaid, tablas, resaltado y fuentes locales sin ningún bloqueo. Ecuaciones (1) y (2) citadas, números de línea y ajuste. ▶ Ejecutar: «Cancelar» no ejecuta; «Ejecutar» → `45 ñ`; un error sale en rojo.
+- **Paquete**: autocomprobación de `EDITH.exe` **13/13** (incluye Playwright con su driver, PDF y calendario).
+- **Instalador real**: **14/14**. Instaló en silencio en una carpeta temporal en 16 s, el `EDITH.exe` instalado pasó su autocomprobación y desinstaló sin dejar archivos. Tus accesos directos, el inicio con Windows, tus datos y tu EDITH abierta quedaron intactos.
+
+### 📌 Lo que queda
+- **Del servidor (Fase 8)**: URL pública (llamadas), llamadas delegadas, voz propia en llamadas, modo cliente, webcam.
+- **Decisiones tuyas**: firma de código (sin firma, SmartScreen avisará al instalar; opciones en [[Diseño de EDITH Setup (Aplicación de Escritorio)]]) y publicar el primer *release* en GitHub para que funcione el aviso de versiones.
+- **Pasos tuyos**: **regenerar la API key del plugin Local REST API** (sigue en el historial público), descargar el modelo de visión, probar WhatsApp con un número real y configurar Casa y cuentas si quieres usarlas.
+- **En pausa**: micrófono nativo en Python (con la app en la bandeja WebView2 sigue escuchando y el permiso se recuerda) y evitar el cambio de modelo (necesita más VRAM).
+
+---
+
 ## v0.0.10 — 17/10/2026 · Voces que suenan distinto, voz «Viernes» y «Oye EDITH» con Whisper local
 Rama `claude/eloquent-perlman-e610ae`, encima de `main` (`36aac2e`). Tres problemas de voz: todas las voces sonaban igual, faltaba una voz con estilo «Viernes» y «Oye EDITH» no funcionaba en la app. Primero se midió la causa de cada uno.
 

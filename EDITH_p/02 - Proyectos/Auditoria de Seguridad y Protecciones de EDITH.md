@@ -9,7 +9,7 @@ tags:
   - appsec
 created: 2026-10-15
 updated: 2026-10-16
-version: 0.0.8
+version: 0.1.0
 status: activo
 ---
 
@@ -19,6 +19,8 @@ status: activo
 > Se realizó una **auditoría estática y dinámica de ciberseguridad** sobre la arquitectura actual de EDITH (v0.0.4 / v0.0.5). El sistema cuenta con excelentes defensas contra *Path Traversal*, pero presenta **vulnerabilidades críticas que deben resolverse antes de migrarla a un Servidor 24/7 o conectarla a WhatsApp y Telefonía**.
 >
 > **Actualización v0.0.7 (16/10/2026):** los dos riesgos críticos y el de inyección indirecta quedaron **mitigados** (token de acceso + `Host`/`Origin`, confirmación humana, contenido externo marcado y HTML saneado). Queda pendiente el riesgo medio de secretos en texto plano (DPAPI).
+>
+> **Actualización v0.1.0 (17/10/2026):** secretos cifrados con DPAPI, límites de peticiones, confirmación por WhatsApp y Content-Security-Policy estricta con librerías locales. Lo nuevo que actúa (teclado, navegador, casa, ▶ Ejecutar) pide permiso.
 
 ---
 
@@ -29,14 +31,16 @@ status: activo
 | **1. Inyección de Comandos PowerShell** | 🟢 **MITIGADO (v0.0.7)** | Cada comando y cada app piden «¿Autorizas?» en pantalla; sin respuesta en 120 s se rechaza; desde remoto se rechaza; `open_application` sin `shell=True` | Ejecución arbitraria de scripts / borrado (antes) | Mantener las pruebas de `tests/test_seguridad.py` |
 | **2. Falta de Autenticación en API / WS** | 🟢 **MITIGADO (v0.0.7)** | Token obligatorio (cookie `HttpOnly` o `Bearer`), `Host` permitido y `Origin` del mismo sitio | Control remoto no autorizado en servidor (antes) | En red: `EDITH_ALLOWED_HOSTS` + enlace de `--access-link` |
 | **3. Inyección Indirecta de Prompts** | 🟢 **MITIGADO (v0.0.7)** | Web, archivos y notas llegan como `[DATO NO CONFIABLE]`; tras leerlos, las acciones sensibles piden confirmación y, tras leer datos privados, salir a internet también | La IA ejecuta órdenes ocultas de webs (antes) | Un modelo pequeño puede seguir equivocándose: la confirmación es la barrera real |
-| **4. Fuga de Secretos & Credenciales** | 🟡 **MEDIO** | `.env` y `data.json` en texto plano | Exposición de API keys y sesión WhatsApp | Cifrado DPAPI / Permisos `icacls` |
+| **4. Fuga de Secretos & Credenciales** | 🟢 **MITIGADO (v0.1.0)** | Token, clave del bridge y secretos de Ajustes cifrados con DPAPI (`dpapi:…`) | Exposición de API keys (antes) | La sesión de WhatsApp (Baileys) sigue en claro dentro de tu perfil |
 | **5. Privacidad de Audio (Hot-Mic)** | 🟢 **BAJO** | Pendiente implementación nativa | Grabación inadvertida de voz | Buffer solo en RAM, sin guardado en disco |
 | **6. Path Traversal en Workspace** | 🟢 **CORREGIDO (v0.0.5)** | Tenía un fallo de prefijo (`startswith`) que dejaba escribir en carpetas hermanas; ahora compara por componentes de ruta | Escritura fuera de `workspace/` (antes) | Mantener la prueba de regresión |
 | **7. Canales remotos (WhatsApp/Teléfono)** | 🟢 **MITIGADO (v0.0.5)** | Lista blanca, firma de Twilio, clave del bridge, sin herramientas de sistema desde remoto | Control de la PC por un tercero | Mantener `REMOTE_ALLOW_SYSTEM_TOOLS=false` |
-| **8. HTML del modelo en la interfaz (XSS)** | 🟢 **MITIGADO (v0.0.7)** | DOMPurify 3.4.16 (versión fija + SRI); imágenes externas, `<style>`, formularios y CSS peligroso bloqueados; fuentes y diagramas escapados | Robar la sesión o pulsar «Autorizar» por ti | Falta una CSP completa |
-| **9. Conversaciones en el repositorio** | 🟢 **CORREGIDO (v0.0.7)** | `data/sessions/` fuera de git | Publicar tus charlas al subir el código | `data/memory/` y `data/audio/` siguen en git |
+| **8. HTML del modelo en la interfaz (XSS)** | 🟢 **MITIGADO (v0.1.0)** | DOMPurify + CSP estricta (`script-src 'self'`) con librerías locales verificadas | Robar la sesión o pulsar «Autorizar» por ti | — |
+| **9. Datos personales en el repositorio** | 🟢 **CORREGIDO (v0.1.0)** | `data/sessions`, `data/memory`, `data/audio` y `data/learnings` fuera de git | Publicar tus charlas al subir el código | Siguen en el historial anterior |
 | **10. Claves de plugins de Obsidian en GitHub** | 🟠 **ALTO → contenido (v0.0.8)** | `.obsidian/plugins/*/data.json` fuera de git y en `.gitignore` | El commit `7446bb0` publicó la API key y las claves privadas de los certificados del plugin Local REST API en el repositorio público | **Regenerarlas en Obsidian**; borrar del historial requiere reescribirlo |
 | **11. Ajustes desde la interfaz** | 🟢 **PROTEGIDO (v0.0.8)** | Token + solo esta computadora + mismo `Origin`; una línea por ajuste y solo claves conocidas | Que otra web o dispositivo cambie modelos, números autorizados o active PowerShell remoto | — |
+| **12. Abuso o fuerza bruta** | 🟢 **MITIGADO (v0.1.0)** | 240 peticiones/min desde otros dispositivos, 10 tokens incorrectos/min por IP, 20 consultas al modelo/min | Saturar la GPU o adivinar el token | Ajustable en `.env` |
+| **13. Acciones nuevas (teclado, navegador, casa, código)** | 🟢 **CONTROLADO (v0.1.0)** | Teclado, botones web, descargas y ▶ Ejecutar piden permiso siempre; contraseñas y tarjetas nunca las escribe EDITH; casa sin cerraduras ni alarmas | Que una web o un correo dirija acciones | La confirmación también llega por WhatsApp |
 
 ---
 
@@ -132,9 +136,9 @@ graph TD
 3. [x] **Filtro de Números Autorizados**: lista blanca obligatoria para WhatsApp y Twilio (v0.0.5).
 4. [x] **Aislamiento de Prompts de Búsqueda Web**: texto externo marcado como `[DATO NO CONFIABLE]` y acciones sensibles con confirmación (v0.0.7).
 5. [x] **HTML saneado con DOMPurify** y conversaciones fuera de git (v0.0.7).
-6. [ ] **Límite de peticiones** (60/min) para no saturar la GPU.
-7. [ ] **Secretos cifrados con DPAPI** (`.env`, clave del bridge, token, sesión de WhatsApp).
-8. [ ] **Content-Security-Policy completa** y versiones fijas de todas las librerías del CDN.
+6. [x] **Límite de peticiones** por minuto (v0.1.0).
+7. [x] **Secretos cifrados con DPAPI** (token, clave del bridge y secretos de Ajustes) (v0.1.0). La sesión de WhatsApp sigue en claro dentro de tu perfil.
+8. [x] **Content-Security-Policy completa** y versiones fijas de todas las librerías, en copia local (v0.1.0).
 9. [ ] **Buffer de micrófono volátil** (Fase 3).
 10. [ ] **Regenerar la API key y los certificados del plugin Local REST API** de Obsidian (publicados en `7446bb0`).
 
@@ -145,4 +149,4 @@ graph TD
 4. Las pruebas de todo esto: `python tests/test_seguridad.py` (78 casos).
 
 ---
-*Auditoría de ciberseguridad realizada e indexada en Obsidian para E.D.I.T.H. - 15/10/2026. Actualizada el 16/10/2026 (v0.0.8).*
+*Auditoría de ciberseguridad realizada e indexada en Obsidian para E.D.I.T.H. - 15/10/2026. Actualizada el 17/10/2026 (v0.1.0).*

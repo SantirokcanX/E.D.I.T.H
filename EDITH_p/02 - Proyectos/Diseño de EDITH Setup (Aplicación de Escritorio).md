@@ -7,7 +7,7 @@ tags:
   - instalador
   - aplicacion-escritorio
 created: 2026-10-16
-status: en-marcha (15.1 a 15.3 listas)
+status: en-marcha (15.1 a 15.4 listas; 15.5 con aviso de versiones)
 fase: 15
 ---
 
@@ -28,6 +28,9 @@ fase: 15
 
 > [!success] Entrega 15.3 completada (v0.0.9, 16/10/2026)
 > Empaquetado: `build\build_setup.ps1` → `dist\EDITH\EDITH.exe` (PyInstaller, modo carpeta), que funciona sin la carpeta del proyecto ni el `.venv`, y `edith-whatsapp.exe` (esbuild + Node SEA). Detalle en [[Registro de Cambios de EDITH#v0.0.9 — 16/10/2026 · EDITH empaquetada, sin el proyecto ni el .venv (Fase 15.3)]].
+
+> [!success] Entregas 15.4 y 15.5 (v0.1.0, 17/10/2026)
+> `EDITH-Setup.exe` con Inno Setup: por usuario, WhatsApp opcional, Ollama si falta, inicio con Windows y desinstalador que pregunta por tus datos. Aviso de versiones nuevas desde los releases de GitHub. Detalle en [[Registro de Cambios de EDITH#v0.1.0 — 17/10/2026 · Todo lo que faltaba, menos el servidor]].
 
 ## 🔎 Punto de partida (antes de la 15.1, v0.0.5)
 
@@ -135,10 +138,10 @@ Todo lo elegido queda editable en un panel **Ajustes** dentro de la app.
 
 ## 🔄 Actualizaciones, firma y desinstalación
 
-- **Actualizaciones**: al arrancar, EDITH consulta un manifiesto de versiones (p. ej. *GitHub Releases*) y ofrece "Hay una versión nueva"; descarga el nuevo `EDITH-Setup` y lo ejecuta. Tus datos no se tocan.
-- **Firma de código**: sin firmar, Windows mostrará *"Windows protegió tu PC"* (SmartScreen) al instalar. Opciones: aceptarlo para uso personal, un certificado autofirmado solo para tus equipos, o firma real (Azure Trusted Signing o certificado comercial) si se distribuye a otras personas.
+- **Actualizaciones** (hecho en v0.1.0): la app instalada mira una vez al día el último *release* de GitHub (`SantirokcanX/E.D.I.T.H`) y ofrece «Descargar»; instalar encima conserva tus datos. Para publicar una versión: crea un release `vX.Y.Z` con el archivo `EDITH-Setup-X.Y.Z.exe` que genera `build\build_setup.ps1`.
+- **Firma de código**: sin firmar, Windows mostrará *"Windows protegió tu PC"* (SmartScreen) al instalar. Opciones: aceptarlo para uso personal, un certificado autofirmado solo para tus equipos, o firma real (Azure Trusted Signing o certificado comercial) si se distribuye a otras personas. *Pendiente de decidir (con la v0.1.0 sin firmar, SmartScreen avisa al instalar).*
 - **Antivirus**: los ejecutables de PyInstaller a veces dan falsos positivos; el modo carpeta y la firma lo reducen.
-- **Desinstalador**: pregunta si conservar conversaciones, recordatorios y ajustes.
+- **Desinstalador** (hecho en v0.1.0): pregunta si borrar conversaciones, memoria y ajustes; «No» por defecto y, en una desinstalación silenciosa, nunca.
 
 ---
 
