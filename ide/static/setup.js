@@ -92,9 +92,11 @@ const EdithSetup = (() => {
             play.disabled = true;
             play.textContent = "Generando…";
             try {
-              const { audio_url, offline } = await api("/api/setup/voice/sample", { method: "POST", body: JSON.stringify({ voice_key: input.value }) });
-              // Sin conexión con el servicio de voz neural, todas las muestras suenan con la voz de Windows
-              error.textContent = offline ? "Sin conexión con el servicio de voz: esta muestra usa la voz de Windows, no la elegida." : "";
+              const { audio_url, offline, reason } = await api("/api/setup/voice/sample", { method: "POST", body: JSON.stringify({ voice_key: input.value }) });
+              // Si falla la voz neural, todas las muestras suenan con la misma voz de Windows: decir por qué
+              error.textContent = offline
+                ? `${reason || "Sin conexión con el servicio de voz."} Esta muestra usa la voz de Windows, no la elegida (sin la voz neural todas suenan igual).`
+                : "";
               const audio = new Audio(audio_url);
               await audio.play();
             } catch (e) {
@@ -373,7 +375,7 @@ const EdithSetup = (() => {
     { id: "bienvenida", title: "Hola, soy EDITH 👓", text: "Vamos a dejarme lista en un par de minutos. Todo se puede cambiar después en Ajustes.", keys: ["USER_NAME"] },
     { id: "equipo", title: "Tu equipo y mis modelos", text: "Elijo los modelos de IA según tu tarjeta gráfica para responder rápido.", keys: ["OLLAMA_MODEL", "OLLAMA_DEEP_MODEL"], hardware: true },
     { id: "obsidian", title: "Tu bóveda de Obsidian", text: "Ahí guardaré notas, resúmenes y nuestras conversaciones.", keys: ["OBSIDIAN_VAULT_PATH", "OBSIDIAN_AUTO_SYNC"] },
-    { id: "voz", title: "Elige mi voz", text: "Escucha cada una y quédate con la que más te guste.", keys: ["EDITH_VOICE", "VOICE_OFFLINE_FALLBACK"] },
+    { id: "voz", title: "Elige mi voz", text: "Escucha cada una y quédate con la que más te guste.", keys: ["EDITH_VOICE", "VOICE_OFFLINE_FALLBACK", "WAKE_WORD_ENABLED"] },
     { id: "canales", title: "WhatsApp y teléfono", text: "Opcional: háblame desde el celular. Solo responderé a los números que pongas aquí.",
       keys: ["AUTHORIZED_PHONE_NUMBERS", "WHATSAPP_ENABLED", "WHATSAPP_VOICE_REPLIES"],
       advanced: ["OWNER_PHONE_NUMBER", "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_PHONE_NUMBER", "PUBLIC_BASE_URL", "TWILIO_VOICE_MODE"] },

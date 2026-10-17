@@ -7,7 +7,7 @@ import secrets
 import threading
 from pathlib import Path
 from typing import Any, Dict, Optional
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel
@@ -27,7 +27,9 @@ from agent.tools.obsidian_tools import get_vault_path, sync_edith_session, searc
 from agent.channels.security import get_api_token
 from ide.auth import AccessGuard, access_link_hint
 from ide.channels_api import router as channels_router, start_channels, stop_channels
-from ide.setup_api import router as setup_router
+from ide.setup_api import router as setup_router, same_origin
+from ide.voice_api import router as voice_router
+from agent.setup import settings as setup_settings
 
 try:  # ML opcional
     from agent.ml import get_ml_engine, ROUTES as ML_ROUTES
@@ -189,11 +191,19 @@ def get_status():
 
 
 @app.post("/api/voice/select")
-def api_select_voice(req: VoiceSelectRequest):
+def api_select_voice(req: VoiceSelectRequest, request: Request):
     ok = voice_engine.set_voice(req.voice_key)
     if not ok:
         raise HTTPException(status_code=400, detail="Voz no encontrada")
-    return {"status": "ok", "current_voice": voice_engine.current_voice_info}
+    # Antes solo cambiaba en memoria: al reiniciar volvía la voz del .env. Se guarda como en Ajustes,
+    # y solo desde esta computadora (igual que el resto de ajustes)
+    saved = False
+    try:
+        same_origin(request)
+        saved = setup_settings.save({"EDITH_VOICE": voice_engine.voice_key}).get("ok", False)
+    except HTTPException:
+        pass
+    return {"status": "ok", "current_voice": voice_engine.current_voice_info, "saved": saved}
 
 
 @app.get("/api/workspace")
@@ -566,4 +576,5 @@ def index_page():
 
 app.include_router(channels_router)
 app.include_router(setup_router)  # Fase 15.2: asistente de primer arranque y Ajustes
+app.include_router(voice_router)  # «Oye EDITH» con Whisper local
 app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")

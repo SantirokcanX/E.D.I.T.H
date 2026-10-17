@@ -67,10 +67,14 @@ class Config:
         cls.OBSIDIAN_VAULT_PATH = os.getenv("OBSIDIAN_VAULT_PATH", "").strip() or _default_vault()
         cls.OBSIDIAN_AUTO_SYNC = _flag("OBSIDIAN_AUTO_SYNC", "false")
 
-        # Voz elegida en Ajustes (elvira, dalia, ximena, salome)
+        # Voz elegida en Ajustes (elvira, dalia, ximena, salome, viernes)
         cls.EDITH_VOICE = os.getenv("EDITH_VOICE", "elvira").strip().lower()
         # Voz: si edge-tts falla (sin internet), usar las voces SAPI5 de Windows
         cls.VOICE_OFFLINE_FALLBACK = _flag("VOICE_OFFLINE_FALLBACK", "true")
+        # «Oye EDITH»: micrófono de la interfaz -> Whisper local (agent/voice/wake_word.py)
+        cls.WAKE_WORD_ENABLED = _flag("WAKE_WORD_ENABLED", "true")
+        cls.WAKE_WORD_SENSITIVITY = os.getenv("WAKE_WORD_SENSITIVITY", "normal").strip().lower()
+        cls.WAKE_WORD_MODEL = os.getenv("WAKE_WORD_MODEL", "base").strip()
 
         # --- Canales remotos (Fases 9 y 10) ---
         # Lista blanca: solo estos números pueden hablar con EDITH por WhatsApp o teléfono.

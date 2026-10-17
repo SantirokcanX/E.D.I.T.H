@@ -118,6 +118,11 @@ def apply_live(changed: List[str]) -> List[str]:
         from agent.channels import voice_notes
         voice_notes._model = None  # se cargará el nuevo en la próxima nota de voz
         done.append("transcripción")
+    if {"WAKE_WORD_ENABLED", "WAKE_WORD_SENSITIVITY", "WAKE_WORD_MODEL", "WHISPER_MODEL"} & set(changed):
+        from agent.voice.wake_word import get_wake_listener
+        if {"WAKE_WORD_MODEL", "WHISPER_MODEL"} & set(changed):
+            get_wake_listener().reset()  # la interfaz pide el modelo nuevo al recargar el estado
+        done.append("oye edith")
     if {"WHATSAPP_ENABLED", "AUTHORIZED_PHONE_NUMBERS"} & set(changed):
         channels_api.restart_bridge()
         done.append("whatsapp")
@@ -157,9 +162,10 @@ async def voice_sample(req: VoiceSampleRequest):
     engine = VoiceEngine(voice_key=req.voice_key)
     path = await engine.synthesize_async("Hola, soy EDITH. Así sonaría mi voz cuando hablemos.")
     if not path:
-        raise HTTPException(status_code=503, detail="No pude generar la muestra de voz")
-    # .wav = respaldo SAPI5 de Windows (no hubo conexión con la voz neural)
-    return {"audio_url": f"/api/audio/{Path(path).name}", "offline": path.endswith(".wav")}
+        raise HTTPException(status_code=503, detail=engine.last_error or "No pude generar la muestra de voz")
+    # .wav = respaldo SAPI5 de Windows: la voz neural falló y la muestra NO es la voz elegida
+    return {"audio_url": f"/api/audio/{Path(path).name}", "offline": path.endswith(".wav"),
+            "voice_id": engine.voice, "reason": engine.last_error}
 
 
 # ---------------------------------------------------------------- bóveda de Obsidian

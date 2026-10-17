@@ -1,6 +1,7 @@
 """Natural Voice Engine for EDITH with Conversational Prosody and Multi-voice support."""
 
 import asyncio
+import logging
 import os
 import re
 import subprocess
@@ -10,6 +11,8 @@ import uuid
 from pathlib import Path
 from typing import Optional, Dict, List
 import edge_tts
+
+log = logging.getLogger("edith.voz")
 
 PYGAME_INITIALIZED = False
 try:
@@ -47,6 +50,17 @@ class VoiceEngine:
             "name": "Salomé (Agradable, empática y dulce)",
             "rate": "-2%",
             "pitch": "+0Hz"
+        },
+        # Estilo «Viernes» (la IA de Tony Stark): serena y precisa, con acento anglosajón suave. Edge no
+        # tiene voces británicas ni irlandesas que hablen español (Sonia y Emily leen el español con
+        # fonética inglesa: ininteligible); Ava multilingüe sí lo habla bien, con un leve acento inglés.
+        # Es un estilo de voz, no una imitación de la actriz.
+        "viernes": {
+            "id": "en-US-AvaMultilingualNeural",
+            "name": "Viernes (Serena, precisa y con un leve acento inglés)",
+            "rate": "-4%",
+            "pitch": "-3Hz",
+            "offline_culture": "es-ES",
         }
     }
 
@@ -62,6 +76,8 @@ class VoiceEngine:
         self.output_dir = Path(output_dir) if output_dir else DATA_DIR / "audio"
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self._current_playback_thread: Optional[threading.Thread] = None
+        # Por qué falló la voz neural la última vez ("" = funcionó): se muestra en Ajustes
+        self.last_error = ""
 
     @property
     def current_voice_info(self) -> Dict[str, str]:
@@ -183,26 +199,53 @@ class VoiceEngine:
                 pitch=voice_info["pitch"]
             )
             await asyncio.wait_for(communicate.save(str(output_path)), timeout=20)
+            if not output_path.exists() or output_path.stat().st_size == 0:
+                raise edge_tts.exceptions.NoAudioReceived("archivo vacío")
+            self.last_error = ""
             return str(output_path)
-        except Exception:
+        except Exception as exc:
             output_path.unlink(missing_ok=True)  # edge-tts deja un .mp3 vacío al fallar
+            # Antes se tragaba el error: con edge-tts 7.2.8 Microsoft rechazaba TODAS las peticiones
+            # (403) y cada voz sonaba con la misma voz de Windows sin que nada lo explicara
+            self.last_error = self.describe_error(exc)
+            log.warning("Voz neural %s no disponible: %s (%r)", voice_info["id"], self.last_error, exc)
             # Fase 4: sin internet (o edge-tts caído) → voz local de Windows para no quedar muda
             from ..config import Config
             if not Config.VOICE_OFFLINE_FALLBACK:
                 return None
             wav_path = output_path.with_suffix(".wav")
-            return await asyncio.to_thread(self.synthesize_offline, clean, wav_path)
+            culture = voice_info.get("offline_culture") or voice_info["id"][:5]
+            return await asyncio.to_thread(self.synthesize_offline, clean, wav_path, culture)
 
     @staticmethod
-    def synthesize_offline(text: str, wav_path: Path) -> Optional[str]:
-        """Síntesis 100% offline con SAPI5 (System.Speech); prefiere una voz en español."""
+    def describe_error(exc: BaseException) -> str:
+        """Motivo del fallo de la voz neural, en palabras para el usuario."""
+        status = getattr(exc, "status", None)
+        if status in (401, 403):
+            return ("El servicio de voz de Microsoft rechazó la conexión (error %s). Suele arreglarse "
+                    "actualizando edge-tts o EDITH." % status)
+        if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
+            return "El servicio de voz de Microsoft tardó demasiado en responder."
+        if isinstance(exc, edge_tts.exceptions.NoAudioReceived):
+            return "El servicio de voz de Microsoft no devolvió audio."
+        if isinstance(exc, OSError) or type(exc).__name__.startswith("ClientConnector"):
+            return "Sin conexión con el servicio de voz de Microsoft (¿hay internet?)."
+        return f"Error del servicio de voz de Microsoft ({type(exc).__name__})."
+
+    @staticmethod
+    def synthesize_offline(text: str, wav_path: Path, culture: str = "es-ES") -> Optional[str]:
+        """Síntesis 100% offline con SAPI5 (System.Speech): la voz de Windows de esa región si está
+        instalada, si no cualquiera en español. Con una sola voz española instalada (lo habitual:
+        Sabina, México) todas las voces de EDITH suenan igual sin internet."""
         if sys.platform != "win32":
             return None
         script = (
             "[Console]::InputEncoding = [Text.Encoding]::UTF8;"
             "Add-Type -AssemblyName System.Speech;"
             "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer;"
-            "$v = $s.GetInstalledVoices() | Where-Object { $_.VoiceInfo.Culture.Name -like 'es-*' } | Select-Object -First 1;"
+            "$es = $s.GetInstalledVoices() | Where-Object { $_.Enabled -and $_.VoiceInfo.Culture.Name -like 'es-*' };"
+            "$v = $es | Where-Object { $_.VoiceInfo.Culture.Name -eq $env:EDITH_CULTURE } | Select-Object -First 1;"
+            "if (-not $v) { $v = $es | Select-Object -First 1 };"
             "if ($v) { $s.SelectVoice($v.VoiceInfo.Name) };"
             "$s.SetOutputToWaveFile($env:EDITH_WAV);"
             "$s.Speak([Console]::In.ReadToEnd());"
@@ -212,7 +255,7 @@ class VoiceEngine:
             subprocess.run(
                 ["powershell", "-NoProfile", "-Command", script],
                 input=text.encode("utf-8"), timeout=60, check=True,
-                env={**os.environ, "EDITH_WAV": str(wav_path)},
+                env={**os.environ, "EDITH_WAV": str(wav_path), "EDITH_CULTURE": culture},
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000),
             )
             return str(wav_path) if wav_path.exists() and wav_path.stat().st_size > 0 else None
