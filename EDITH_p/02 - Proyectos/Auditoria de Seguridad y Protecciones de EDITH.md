@@ -140,7 +140,7 @@ graph TD
 
 ### 🔐 Entrar desde otro dispositivo (cuando EDITH esté en el servidor)
 1. En el servidor, añade a `.env` el nombre o la IP con que llegas (p. ej. `EDITH_ALLOWED_HOSTS=edith-pc,100.101.102.103`).
-2. Ejecuta `python main.py --access-link` y abre el enlace en el celular o la laptop (una vez por dispositivo; dura 30 días y se renueva al usarla).
+2. En EDITH, abre ⚙️ Ajustes › Avanzado › **«Copiar enlace para otro dispositivo»** (o ejecuta `EDITH.exe --access-link`; en desarrollo, `python main.py --access-link`) y abre el enlace en el celular o la laptop (una vez por dispositivo; dura 30 días y se renueva al usarla).
 3. El enlace contiene el token: no lo compartas. Para revocar todos los accesos, borra `data/channels/api_token` y reinicia EDITH.
 4. Las pruebas de todo esto: `python tests/test_seguridad.py` (78 casos).
 

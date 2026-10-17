@@ -14,7 +14,7 @@ Bitácora técnica de cada versión. Plan general: [[Plan de Cambios y Evolució
 ---
 
 ## v0.0.9 — 16/10/2026 · EDITH empaquetada, sin el proyecto ni el .venv (Fase 15.3)
-Commit `b2ee9eb`, en la rama `claude/nice-brattain-87c302` encima de la v0.0.8 (`8ce8d38`). Tercera entrega de la Fase 15: **EDITH ya es un programa de verdad**. `dist\EDITH\EDITH.exe` arranca sin la carpeta del proyecto, sin el `.venv` y sin tener Python instalado, y WhatsApp funciona sin instalar Node. Diseño: [[Diseño de EDITH Setup (Aplicación de Escritorio)]].
+Commits `b2ee9eb` (empaquetado) y `1c95838` (enlace para otro dispositivo), en `main` encima de la v0.0.8 (`8ce8d38`). Tercera entrega de la Fase 15: **EDITH ya es un programa de verdad**. `dist\EDITH\EDITH.exe` arranca sin la carpeta del proyecto, sin el `.venv` y sin tener Python instalado, y WhatsApp funciona sin instalar Node. Diseño: [[Diseño de EDITH Setup (Aplicación de Escritorio)]].
 
 ### 📦 Qué se construye
 Un solo comando, `powershell -NoProfile -ExecutionPolicy Bypass -File build\build_setup.ps1` (unos 4 min la primera vez y 2 min después):
@@ -66,6 +66,13 @@ Total: **498 MB** con WhatsApp. Sin el bridge entra en lo estimado (250–450 MB
 - `ide/channels_api.py`: en la app usa `edith-whatsapp.exe` junto a `EDITH.exe`. Desde el código usa `node bridge.mjs` si Node está instalado (los cambios se prueban al momento) y, si no, el `.exe` de `dist\EDITH`. *Canales* informa `bridge_available` y el aviso del QR ya no dice «instala Node».
 - Probado sin Node: arranca, **genera el QR real de vinculación de WhatsApp** y su API local solo responde con la clave (401 sin ella).
 
+### 🔗 Enlace para otro dispositivo, desde la app
+La app empaquetada no trae `main.py`, así que `python main.py --access-link` ya no servía en ella.
+- **⚙️ Ajustes › Avanzado › «Copiar enlace para otro dispositivo»**: copia el enlace de `PUBLIC_BASE_URL` (y ofrece los de `EDITH_ALLOWED_HOSTS`) **sin mostrar el token en pantalla**. Si no hay ninguno configurado, explica cómo hacerlo; si el portapapeles falla, muestra el enlace seleccionado para copiarlo a mano.
+- Lo sirve `POST /api/setup/access-link`, que exige el token, el mismo `Origin` y el navegador de esta máquina (127.0.0.1, sin túnel ni proxy), con `Cache-Control: no-store`.
+- **`EDITH.exe --access-link`** muestra el enlace sin abrir la app (en la terminal, o en un cuadro de Windows si no hay terminal).
+- La página «🔒 EDITH está protegida», el aviso de arranque y `.env.example` citan Ajustes y la orden de cada modo (`EDITH.exe` o `python main.py`), con el puerto real.
+
 ### 🔧 Piezas técnicas
 | Archivo | Qué hace |
 |---|---|
@@ -77,19 +84,20 @@ Total: **498 MB** con WhatsApp. Sin el bridge entra en lo estimado (250–450 MB
 | `agent/paths.py` | `FROZEN`, `INSTALL_DIR`, `VERSION`, `.env` según el modo y adopción única del `.env` del proyecto |
 | `ide/server.py` | Interfaz desde el paquete, `/api/version` y la página con la versión |
 | `ide/channels_api.py` | `bridge_command()`: `.exe` empaquetado o Node |
-| `desktop/desktop_app.py` | `--self-test`, una instancia por carpeta de datos y versión en el registro y la bandeja |
+| `desktop/desktop_app.py` | `--self-test`, `--access-link`, una instancia por carpeta de datos, versión en el registro y la bandeja, y sin el falso `ERROR` de asyncio (`ConnectionResetError` 10054 cuando WebView2 corta una conexión) |
+| `ide/auth.py`, `ide/setup_api.py`, `ide/static/setup.js` | Enlace para otro dispositivo: página de acceso con la orden de cada modo, `POST /api/setup/access-link` y el botón de Ajustes |
 | `desktop/launcher/` | Lanzador de desarrollo; toma la versión de `VERSION` |
 
 ### 🧪 Pruebas
-- **`python tests/test_fase_15_3.py`: 23/23**. Cubren la versión en la API, la interfaz, el lanzador y la spec; el `.env` en modo empaquetado; la adopción del `.env` (una sola vez y sin pisar uno existente); la elección del bridge con y sin Node y en la app; `bridge.mjs` sin `await`; los nombres de instancia, y la autocomprobación desde el código (11/11).
+- **`python tests/test_fase_15_3.py`: 48/48** (23 del empaquetado y 25 del enlace para otro dispositivo). Cubren la versión en la API, la interfaz, el lanzador y la spec; el `.env` en modo empaquetado; la adopción del `.env` (una sola vez y sin pisar uno existente); la elección del bridge con y sin Node y en la app; `bridge.mjs` sin `await`; los nombres de instancia, y la autocomprobación desde el código (11/11).
 - Siguen pasando: `tests/test_fase_15_2.py` **65/65**, `tests/test_seguridad.py` **78/78** y `tests/test_fases_9_11.py` **55/55**.
 - `build\build_setup.ps1` completo: autocomprobación **11/11** y `edith-whatsapp OK · Node 24.22.0 · Baileys cargado`.
 - **App empaquetada real: 12/12**. Se copió a una carpeta temporal fuera del proyecto, sin `.venv` en el PATH, con `EDITH_HOME` temporal y `--tray`, sin tocar la pantalla. Arranca en el puerto 8000 y `/api/version` → `packaged: true`. El asistente queda pendiente y la ventana oculta (WebView2) carga la interfaz sin el token en la URL y **muestra el asistente «Hola, soy EDITH 👓»** (comprobado dentro de WebView2 con su puerto de depuración). La interfaz enlaza `app.js?v=0.0.9`. Ajustes, guardado desde la propia interfaz, escribe en `EDITH_HOME\.env` (`EDITH_VOICE=dalia`, `QUIET_HOURS`) y aplica la voz al momento. Detecta `edith-whatsapp.exe` y se cierra en orden con `Local\EDITH_Desktop_Quit_<huella>`.
+- **Al integrar en `main` (17/10/2026)**, con el código final (incluido el enlace): las 4 suites pasan (**246/246**), `build\build_setup.ps1` desde cero en 9.3 min (autocomprobación **11/11**, bridge OK, 498 MB) y la app empaquetada real, oculta con `--tray`: **13/13** (versión `0.0.9 · packaged`, la ventana entra con el token y WebView2 guarda la cookie `HttpOnly`, sin token → 401, «Iniciar con Windows» apunta al `EDITH.exe` empaquetado con `--tray` y se borra, otro origen → 403, salida ordenada y registro sin errores). Tu EDITH abierta siguió funcionando durante las pruebas.
 - Tus datos reales no se tocaron: 0 archivos modificados en `%LOCALAPPDATA%\EDITH`, y el registro de notificaciones (AppUserModelId) se restauró tras cada prueba. La prueba arrancó Ollama, que no estaba abierto; al terminar se cerró.
 
 ### 📌 Pendiente
 - **15.4 · Instalador** (Inno Setup) sobre `dist\EDITH`, con `edith-whatsapp.exe` como componente opcional.
-- La app empaquetada no tiene `python main.py --access-link`, pero la página de acceso y el aviso del servidor todavía lo mencionan. Falta sacar el enlace para otros dispositivos desde la app (en Ajustes o con `EDITH.exe --access-link`).
 - `edith-whatsapp.exe` lleva el icono y los datos de `node.exe`, y su firma queda rota al inyectar el bridge (postject lo avisa). Firmar los dos ejecutables entra en la decisión de firma de la 15.5.
 - `dist\` y `build\.venv` no van a git. Para probar en otra PC basta copiar la carpeta `dist\EDITH` (o esperar al instalador).
 

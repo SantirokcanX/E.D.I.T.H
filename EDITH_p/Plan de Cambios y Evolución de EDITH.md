@@ -211,7 +211,7 @@ timeline
 - [ ] **Clientes Ligeros**:
   - Tu laptop ejecuta la interfaz gráfica conectada por red a la PC; uso de CPU/GPU de la laptop: ~0 %.
 - [ ] **URL pública HTTPS para Twilio** (`PUBLIC_BASE_URL`): Tailscale Funnel o Cloudflare Tunnel hacia `/api/voice/*` y `/ws/voice`. Es lo único que falta para activar las llamadas de la Fase 10.
-- [x] Antes de exponer nada a la red: **autenticación de la interfaz y la API** (Fase 14, v0.0.7). Al abrir EDITH en red: añade el nombre o la IP de Tailscale a `EDITH_ALLOWED_HOSTS` y entra desde cada dispositivo con el enlace que muestra `python main.py --access-link`.
+- [x] Antes de exponer nada a la red: **autenticación de la interfaz y la API** (Fase 14, v0.0.7). Al abrir EDITH en red: añade el nombre o la IP de Tailscale a `EDITH_ALLOWED_HOSTS` y entra desde cada dispositivo con el enlace de **⚙️ Ajustes › Avanzado › «Copiar enlace para otro dispositivo»** (o `EDITH.exe --access-link`; en desarrollo, `python main.py --access-link`).
 
 ### ✅ Fase 9: WhatsApp Táctico (Mensajes, Notas de Voz y Alertas) — v0.0.5
 > [!tip] Objetivo
@@ -259,7 +259,7 @@ timeline
 
 ### 🛡️ Fase 14: Endurecimiento de Seguridad
 > [!success] Requisito de la Fase 8: listo (v0.0.7)
-> La interfaz, la API y el chat exigen un token (en la laptop entra sola; desde otro dispositivo, con el enlace de `python main.py --access-link`). PowerShell y abrir apps piden tu permiso en pantalla. Detalle: [[Auditoria de Seguridad y Protecciones de EDITH]] y [[Registro de Cambios de EDITH]].
+> La interfaz, la API y el chat exigen un token (en la laptop entra sola; desde otro dispositivo, con el enlace de ⚙️ Ajustes › Avanzado o `EDITH.exe --access-link`). PowerShell y abrir apps piden tu permiso en pantalla. Detalle: [[Auditoria de Seguridad y Protecciones de EDITH]] y [[Registro de Cambios de EDITH]].
 
 - [x] Lista blanca de números para WhatsApp y teléfono (v0.0.5).
 - [x] Sin PowerShell, apps, pantalla ni portapapeles desde canales remotos (v0.0.5).
@@ -330,7 +330,7 @@ timeline
 - [ ] Aviso de versión nueva y actualización conservando datos.
 - [ ] Decidir firma de código (SmartScreen avisará si no se firma).
 - [ ] Modo *cliente de mi servidor* (requiere Fases 8 y 14).
-- [ ] Enlace de acceso para otros dispositivos desde la app (hoy solo `python main.py --access-link`, que no existe en la app empaquetada).
+- [x] Enlace de acceso para otros dispositivos desde la app: ⚙️ Ajustes › Avanzado › «Copiar enlace para otro dispositivo» y `EDITH.exe --access-link` (v0.0.9).
 - [ ] Prueba completa en una cuenta de Windows nueva o máquina virtual.
 
 > [!warning] Dependencias

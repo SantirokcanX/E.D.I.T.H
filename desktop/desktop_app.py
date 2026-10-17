@@ -63,6 +63,14 @@ log = logging.getLogger("edith.desktop")
 
 
 # ---------------------------------------------------------------- registro
+class _SkipConnectionReset(logging.Filter):
+    """En Windows, cuando la ventana (WebView2) corta una conexión de golpe, asyncio registra
+    ConnectionResetError (WinError 10054) como ERROR con traza aunque no falló nada."""
+
+    def filter(self, record):
+        return not (record.exc_info and isinstance(record.exc_info[1], ConnectionResetError))
+
+
 def setup_logging():
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
     handler = RotatingFileHandler(LOGS_DIR / "edith-desktop.log", maxBytes=2_000_000, backupCount=3, encoding="utf-8")
@@ -70,6 +78,7 @@ def setup_logging():
     root = logging.getLogger()
     root.setLevel(logging.INFO)
     root.addHandler(handler)
+    logging.getLogger("asyncio").addFilter(_SkipConnectionReset())
     # Sin consola (pythonw / EDITH.exe) stdout y stderr no existen: todo va al registro
     if sys.stdout is None or sys.stderr is None or not sys.stdout.isatty():
         stream = open(LOGS_DIR / "edith-desktop.out.log", "a", encoding="utf-8", buffering=1)
