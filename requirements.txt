@@ -21,3 +21,4 @@ numpy>=1.26.0
 scipy>=1.13.0
 twilio>=9.0.0
 faster-whisper>=1.0.0
+playwright>=1.64.0

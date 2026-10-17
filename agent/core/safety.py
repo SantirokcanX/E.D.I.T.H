@@ -14,13 +14,15 @@ import json
 import re
 from typing import Any, Optional
 
-CONFIRM_ALWAYS = {"run_system_command", "open_application", "keyboard_actions"}
+CONFIRM_ALWAYS = {"run_system_command", "open_application", "keyboard_actions",
+                  "browser_click", "browser_download"}  # pulsar botones en la web o bajar archivos
 
 # Su salida es contenido de terceros o de archivos: se marca como dato no confiable
 UNTRUSTED_OUTPUT = {
     "web_search", "read_web_page",
     "read_workspace_file", "obsidian_read_note", "read_obsidian_note", "obsidian_search",
     "read_clipboard", "analyze_screen",
+    "browser_open", "browser_read", "browser_follow_link", "browser_click",
 }
 
 # Leen datos privados del usuario
@@ -38,7 +40,7 @@ SENSITIVE_AFTER_EXTERNAL = {
 }
 
 # Sacan información a internet
-OUTBOUND = {"web_search", "read_web_page"}
+OUTBOUND = {"web_search", "read_web_page", "browser_open", "browser_follow_link", "browser_fill"}
 
 _OPEN = "<<<CONTENIDO_EXTERNO>>>"
 _CLOSE = "<<<FIN_CONTENIDO_EXTERNO>>>"
@@ -81,6 +83,13 @@ def describe_action(tool: str, args: Any) -> "tuple[str, str]":
         from ..tools.keyboard_tools import describe_steps
         return (f"EDITH quiere escribir y pulsar teclas en «{args.get('target_window', '')}»:",
                 describe_steps(args.get("steps") or []).replace("; ", "\n"))
+    if tool == "browser_click":
+        from ..tools.browser_tools import describe_element
+        return "EDITH quiere pulsar en la web:", describe_element(args.get("element_id", ""))
+    if tool == "browser_download":
+        from ..tools.browser_tools import describe_element
+        return ("EDITH quiere descargar un archivo:",
+                args.get("url") or describe_element(args.get("element_id", "")))
     return f"EDITH quiere usar «{tool}»:", json.dumps(args, ensure_ascii=False, indent=2)
 
 

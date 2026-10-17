@@ -78,6 +78,8 @@ class Config:
         cls.OBSIDIAN_AUTO_SYNC = _flag("OBSIDIAN_AUTO_SYNC", "false")
         # Fase 2: copiar a la bóveda los diagramas y las notas del día del workspace
         cls.OBSIDIAN_SAVE_WORKSPACE = _flag("OBSIDIAN_SAVE_WORKSPACE", "true")
+        # Fase 12: navegador propio de EDITH (Playwright). msedge = el Microsoft Edge instalado
+        cls.BROWSER_CHANNEL = os.getenv("BROWSER_CHANNEL", "msedge").strip()
 
         # Voz elegida en Ajustes (elvira, dalia, ximena, salome)
         cls.EDITH_VOICE = os.getenv("EDITH_VOICE", "elvira").strip().lower()

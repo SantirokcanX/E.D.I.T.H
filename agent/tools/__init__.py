@@ -32,6 +32,7 @@ from .obsidian_tools import (
 from .clipboard_tools import read_clipboard, write_clipboard, CLIPBOARD_TOOLS_METADATA
 from .reminder_tools import create_reminder, list_reminders, cancel_reminder, REMINDER_TOOLS_METADATA
 from .keyboard_tools import keyboard_actions, KEYBOARD_TOOLS_METADATA
+from .browser_tools import BROWSER_HANDLERS, BROWSER_TOOLS_METADATA, browser_active
 from .screen_tools import (
     capture_screen,
     analyze_screen,
@@ -79,12 +80,16 @@ ALL_TOOLS_METADATA = (
     OBSIDIAN_TOOLS_METADATA +
     CLIPBOARD_TOOLS_METADATA +
     REMINDER_TOOLS_METADATA +
-    KEYBOARD_TOOLS_METADATA
+    KEYBOARD_TOOLS_METADATA +
+    [t for t in BROWSER_TOOLS_METADATA if t["name"] == "browser_open"]
 )
 
 # Grupos opcionales: solo se ofrecen al modelo si están configurados (Home Assistant, correo...).
 # Cada módulo añade (función_que_dice_si_está_activo, metadatos).
-OPTIONAL_TOOL_GROUPS = []
+OPTIONAL_TOOL_GROUPS = [
+    # El resto del navegador solo cuando hay una página abierta: así no gasta contexto del modelo
+    (browser_active, [t for t in BROWSER_TOOLS_METADATA if t["name"] != "browser_open"]),
+]
 
 
 def available_tools_metadata():
@@ -101,6 +106,7 @@ def available_tools_metadata():
 # Herramientas nuevas: nombre -> función(**args). ReasoningAgent las ejecuta sin tocar su lista de casos.
 EXTRA_HANDLERS = {
     "keyboard_actions": keyboard_actions,
+    **BROWSER_HANDLERS,
 }
 
 # Herramientas que tocan la máquina directamente: bloqueadas desde canales remotos
@@ -108,7 +114,7 @@ EXTRA_HANDLERS = {
 LOCAL_ONLY_TOOLS = {
     "run_system_command", "open_application", "control_system_volume",
     "capture_screen", "analyze_screen", "read_clipboard", "write_clipboard",
-    "keyboard_actions",
+    "keyboard_actions", "browser_show",
 }
 
 __all__ = [
