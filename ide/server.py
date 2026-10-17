@@ -407,6 +407,13 @@ async def _handle_query(websocket: WebSocket, payload: Dict[str, Any], pending: 
     # Razonamiento: "fast" = directo, "deep" = pensar a fondo, "auto" = EDITH decide
     reasoning = payload.get("reasoning", "auto")
     think_choice = {"fast": False, "deep": True}.get(reasoning)
+    if think_choice is not None and Config.ML_ENABLED and payload.get("prompt", "").strip():
+        # Elegiste 🔬 o ⚡ a mano: EDITH aprende cuándo prefieres que piense a fondo
+        try:
+            from agent.ml.deep_router import get_deep_router
+            await asyncio.to_thread(get_deep_router().learn, payload["prompt"].strip(), think_choice)
+        except Exception as e:
+            print(f"[ML] no se pudo aprender la preferencia de razonamiento: {e}")
     speak_response = payload.get("speak", True)
 
     if not user_prompt:
