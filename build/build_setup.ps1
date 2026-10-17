@@ -23,6 +23,9 @@
 .PARAMETER SkipSelfTest
     No ejecuta las autocomprobaciones del final.
 
+.PARAMETER NoInstaller
+    No compila dist\EDITH-Setup-<versión>.exe (paso 5, necesita Inno Setup 6).
+
 .EXAMPLE
     powershell -NoProfile -ExecutionPolicy Bypass -File build\build_setup.ps1
 #>
@@ -30,7 +33,8 @@ param(
     [string]$Python = "",
     [switch]$Clean,
     [switch]$NoWhatsApp,
-    [switch]$SkipSelfTest
+    [switch]$SkipSelfTest,
+    [switch]$NoInstaller
 )
 
 $ErrorActionPreference = "Stop"
@@ -99,7 +103,7 @@ try {
     }
 
     # ------------------------------------------------------------------ 1. entorno limpio
-    Write-Step "1/4 Entorno de Python limpio (build\.venv)"
+    Write-Step "1/5 Entorno de Python limpio (build\.venv)"
     $VenvPython = Join-Path $Venv "Scripts\python.exe"
     if (-not (Test-Path $VenvPython)) {
         $base = Find-Python
@@ -113,7 +117,7 @@ try {
     Write-Host "Python $pyVersion listo"
 
     # ------------------------------------------------------------------ 2. PyInstaller
-    Write-Step "2/4 EDITH.exe con PyInstaller (modo carpeta)"
+    Write-Step "2/5 EDITH.exe con PyInstaller (modo carpeta)"
     Invoke-Native $VenvPython @("-m", "PyInstaller", "--noconfirm", "--clean", "--log-level", "WARN",
         "--distpath", $Dist, "--workpath", (Join-Path $Work "pyinstaller"), (Join-Path $Root "build\edith.spec"))
     $exe = Join-Path $AppDir "EDITH.exe"
@@ -123,9 +127,9 @@ try {
     # ------------------------------------------------------------------ 3. bridge de WhatsApp
     $bridgeExe = Join-Path $AppDir "edith-whatsapp.exe"
     if ($NoWhatsApp) {
-        Write-Step "3/4 Bridge de WhatsApp: omitido (-NoWhatsApp)"
+        Write-Step "3/5 Bridge de WhatsApp: omitido (-NoWhatsApp)"
     } else {
-        Write-Step "3/4 edith-whatsapp.exe (esbuild + Node SEA)"
+        Write-Step "3/5 edith-whatsapp.exe (esbuild + Node SEA)"
         $node = (Get-Command node -ErrorAction SilentlyContinue).Source
         $npm = (Get-Command npm.cmd -ErrorAction SilentlyContinue).Source
         if (-not $node -or -not $npm) { throw "Para construir el bridge hace falta Node 20+ (o usa -NoWhatsApp)." }
@@ -160,15 +164,33 @@ try {
 
     # ------------------------------------------------------------------ 4. autocomprobación
     if ($SkipSelfTest) {
-        Write-Step "4/4 Autocomprobación: omitida (-SkipSelfTest)"
+        Write-Step "4/5 Autocomprobación: omitida (-SkipSelfTest)"
     } else {
-        Write-Step "4/4 Autocomprobación con datos temporales"
+        Write-Step "4/5 Autocomprobación con datos temporales"
         $report = Join-Path $BuildHome "self-test.txt"
         $proc = Start-Process -FilePath $exe -ArgumentList "--self-test=`"$report`"" -Wait -PassThru -WindowStyle Hidden
         if (Test-Path $report) { Get-Content $report -Encoding UTF8 | ForEach-Object { Write-Host "    $_" } }
         if ($proc.ExitCode -ne 0) { throw "La autocomprobación de EDITH.exe falló (código $($proc.ExitCode))." }
         if (Test-Path $bridgeExe) {
             Invoke-Native $bridgeExe @("--check")
+        }
+    }
+
+    # ------------------------------------------------------------------ 5. instalador (Fase 15.4)
+    $setupExe = Join-Path $Dist "EDITH-Setup-$Version.exe"
+    if ($NoInstaller) {
+        Write-Step "5/5 Instalador: omitido (-NoInstaller)"
+    } else {
+        $iscc = @((Join-Path $env:LOCALAPPDATA "Programs\Inno Setup 6\ISCC.exe"),
+                  (Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"),
+                  (Join-Path $env:ProgramFiles "Inno Setup 6\ISCC.exe")) | Where-Object { Test-Path $_ } | Select-Object -First 1
+        if (-not $iscc) {
+            Write-Step "5/5 Instalador: falta Inno Setup 6 (winget install JRSoftware.InnoSetup) — omitido"
+        } else {
+            Write-Step "5/5 EDITH-Setup.exe con Inno Setup"
+            Invoke-Native $iscc @("/Q", "/DAppVersion=$Version", (Join-Path $Root "build\installer\edith.iss"))
+            if (-not (Test-Path $setupExe)) { throw "Inno Setup no generó $setupExe" }
+            Write-Host "EDITH-Setup-$Version.exe · $([math]::Round((Get-Item $setupExe).Length / 1MB, 1)) MB"
         }
     }
 

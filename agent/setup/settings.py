@@ -129,6 +129,8 @@ SCHEMA: List[Dict[str, Any]] = [
          "help": "auto (8000 o el siguiente libre) o un número fijo (necesario para el servidor de la Fase 8)."},
         {"key": "EDITH_HOTKEY", "label": "Atajo global", "type": "text", "restart": True,
          "help": "Ej.: win+shift+e, ctrl+alt+e, u off para desactivarlo."},
+        {"key": "UPDATE_CHECK", "label": "Avisarme de versiones nuevas", "type": "bool",
+         "help": "La app instalada mira una vez al día los releases de EDITH en GitHub. Actualizar conserva tus datos."},
     ]},
 ]
 FIELDS = {f["key"]: f for s in SCHEMA for f in s["fields"]}

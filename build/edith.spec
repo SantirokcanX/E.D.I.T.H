@@ -11,7 +11,7 @@ No se lanza a mano: lo hace build/build_setup.ps1 con el entorno limpio build/.v
 """
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, collect_submodules, copy_metadata
 from PyInstaller.utils.win32.versioninfo import (FixedFileInfo, StringFileInfo, StringStruct, StringTable,
                                                  VarFileInfo, VarStruct, VSVersionInfo)
 
@@ -25,6 +25,7 @@ datas = [
     (str(ROOT / "VERSION"), "."),
 ]
 datas += collect_data_files("faster_whisper")  # silero_vad_v6.onnx (filtro de silencio de las notas de voz)
+datas += copy_metadata("playwright")  # Fase 12: el driver (node.exe) lo trae su hook; la versión, de aquí
 
 binaries = collect_dynamic_libs("ctranslate2")  # ctranslate2.dll y libiomp5md.dll: no tienen hook propio
 

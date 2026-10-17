@@ -606,6 +606,8 @@ async def _startup_channels():
     get_api_token()  # se genera aquí la primera vez, no en la primera petición
     print(f"[Seguridad] Interfaz y API protegidas con token. Para entrar desde otro dispositivo: {access_link_hint()}")
     start_channels(provider, broadcast_ui, asyncio.get_running_loop(), port=port)
+    from agent import updates
+    updates.start_background_check()  # Fase 15.5: solo en la app instalada
 
 
 @app.on_event("shutdown")

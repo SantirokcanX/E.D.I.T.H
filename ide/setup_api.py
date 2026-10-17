@@ -71,6 +71,13 @@ class VaultRequest(BaseModel):
 
 
 # ---------------------------------------------------------------- estado del asistente
+@router.get("/api/update")
+def update_state(check: bool = False):
+    """Fase 15.5: ¿hay una versión nueva? (check=1 consulta GitHub ahora)."""
+    from agent import updates
+    return updates.check(force=True) if check else updates.state()
+
+
 @router.get("/api/setup/status")
 def setup_status():
     state = setup_settings.setup_state()

@@ -84,6 +84,9 @@ class Config:
         cls.OBSIDIAN_SAVE_WORKSPACE = _flag("OBSIDIAN_SAVE_WORKSPACE", "true")
         # Fase 12: navegador propio de EDITH (Playwright). msedge = el Microsoft Edge instalado
         cls.BROWSER_CHANNEL = os.getenv("BROWSER_CHANNEL", "msedge").strip()
+        # Fase 15.5: aviso de versión nueva (la app instalada consulta los releases de GitHub una vez al día)
+        cls.UPDATE_CHECK = _flag("UPDATE_CHECK", "true")
+        cls.UPDATE_REPO = os.getenv("UPDATE_REPO", "SantirokcanX/E.D.I.T.H").strip()
         # Fase 13 (IoT): Home Assistant. Fase 11: calendario (enlaces iCal) y correo IMAP de solo lectura
         cls.HA_URL = os.getenv("HA_URL", "").strip().rstrip("/")
         cls.HA_TOKEN = os.getenv("HA_TOKEN", "").strip()

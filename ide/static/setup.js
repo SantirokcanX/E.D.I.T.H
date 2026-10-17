@@ -572,6 +572,25 @@ const EdithSetup = (() => {
       const status = await api("/api/setup/status");
       if (!status.completed) openWizard();
     } catch (e) {}
+    showUpdateNotice();
+  }
+
+  // Fase 15.5: aviso de versión nueva (una vez por versión; «Ahora no» lo oculta hasta la siguiente)
+  async function showUpdateNotice() {
+    let u;
+    try { u = await api("/api/update"); } catch (e) { return; }
+    if (!u || !u.newer || !u.latest) return;
+    let dismissed = "";
+    try { dismissed = localStorage.getItem("edith.update.dismissed") || ""; } catch (e) {}
+    if (dismissed === u.latest || document.getElementById("esUpdate")) return;
+    const bar = el("div", { id: "esUpdate", class: "es-update", role: "status" },
+      el("span", { text: `🎉 EDITH ${u.latest} está disponible (tienes la ${u.current}). Actualizar conserva tus conversaciones y ajustes.` }),
+      el("button", { type: "button", class: "es-btn", text: "Descargar", onclick: () => openExternal(u.setup_url || u.url) }),
+      el("button", { type: "button", class: "es-link", text: "Ahora no", onclick: () => {
+        try { localStorage.setItem("edith.update.dismissed", u.latest); } catch (e) {}
+        bar.remove();
+      } }));
+    document.body.appendChild(bar);
   }
 
   document.addEventListener("DOMContentLoaded", init);

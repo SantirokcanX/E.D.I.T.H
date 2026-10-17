@@ -133,10 +133,26 @@ def run(report_path: Path) -> int:
         from PIL import Image  # noqa: F401
         return f"psutil {psutil.__version__}"
 
+    def browser():  # Fase 12: Playwright trae su propio driver (Node) dentro del paquete
+        from playwright._impl._driver import compute_driver_executable
+        from playwright._repo_version import version as playwright_version
+        driver = compute_driver_executable()
+        node = Path(driver[0] if isinstance(driver, tuple) else driver)
+        if not node.exists():
+            raise RuntimeError(f"falta el driver de Playwright: {node}")
+        return f"Playwright {playwright_version} · driver {node.name}"
+
+    def documents_and_calendar():  # Fases 9 y 11: PDF, iCal
+        import icalendar
+        import pypdf
+        import recurring_ical_events  # noqa: F401
+        return f"pypdf {pypdf.__version__}, icalendar {icalendar.__version__}"
+
     for name, fn in [("versión", version), ("recursos", resources), ("servidor", server),
                      ("bridge de WhatsApp", whatsapp_bridge), ("numpy/scikit-learn", scientific), ("faster-whisper", whisper), ("PyAV (notas de voz)", audio),
                      ("pygame/edge-tts", sound_and_voice), ("voz de Windows (SAPI5)", sapi5),
-                     ("ventana y bandeja", desktop), ("otras dependencias", others)]:
+                     ("ventana y bandeja", desktop), ("navegador (Playwright)", browser),
+                     ("PDF y calendario", documents_and_calendar), ("otras dependencias", others)]:
         probe(name, fn)
 
     ok = all(r[0] for r in results)
