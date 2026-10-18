@@ -315,7 +315,7 @@ class ReasoningAgent:
 
             elif tool_name == "read_workspace_file":
                 filename = args.get("filename", "")
-                return read_workspace_file(filename=filename)
+                return read_workspace_file(filename=filename, offset=args.get("offset", 0))
 
             elif tool_name == "list_workspace_files":
                 return list_workspace_files()
@@ -454,15 +454,19 @@ class ReasoningAgent:
         return False
 
     def run(self, user_prompt: str, callbacks: Optional[AgentCallbacks] = None,
-            think: Optional[bool] = None, untrusted_input: bool = False) -> AgentRunResult:
-        """untrusted_input=True: el mensaje trae contenido de terceros (una foto o un documento que llegó
-        por WhatsApp): las acciones sensibles del turno piden confirmación, como tras leer una web."""
+            think: Optional[bool] = None, untrusted_input: bool = False,
+            history_prompt: Optional[str] = None) -> AgentRunResult:
+        """untrusted_input=True: el mensaje trae contenido de terceros (archivos adjuntos, una foto o un
+        documento por WhatsApp): las acciones sensibles del turno piden confirmación, como tras leer una web.
+        history_prompt: lo que queda en el historial en lugar de user_prompt (p. ej. sin el texto de los
+        adjuntos, que solo hace falta en este turno y llenaría el contexto de los siguientes)."""
         # Un turno a la vez en el modelo local, venga del canal que venga
         with LLM_LOCK:
-            return self._run(user_prompt, callbacks, think, untrusted_input)
+            return self._run(user_prompt, callbacks, think, untrusted_input, history_prompt)
 
     def _run(self, user_prompt: str, callbacks: Optional[AgentCallbacks] = None,
-             think: Optional[bool] = None, untrusted_input: bool = False) -> AgentRunResult:
+             think: Optional[bool] = None, untrusted_input: bool = False,
+             history_prompt: Optional[str] = None) -> AgentRunResult:
         callbacks = callbacks or AgentCallbacks()
         deep = self.resolve_think(user_prompt, think)
         turn_start = len(self.conversation_history)
@@ -567,7 +571,9 @@ class ReasoningAgent:
                 "content": final_answer
             })
 
-        self.memory.save_session_turn(self.conversation_history, title_candidate=user_prompt)
+        if history_prompt is not None:  # al historial (y al disco) va la versión corta
+            self.conversation_history[turn_start]["content"] = history_prompt
+        self.memory.save_session_turn(self.conversation_history, title_candidate=history_prompt or user_prompt)
         self._auto_sync_obsidian()
         if self.ml:
             try:

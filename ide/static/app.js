@@ -600,16 +600,112 @@ function playVoiceAudio(url) {
 }
 
 // 5. Chat UI Helpers
-function appendUserMessage(text) {
+function appendUserMessage(text, files = []) {
   const container = document.getElementById("chatMessages");
   const msgEl = document.createElement("div");
   msgEl.className = "message user-msg";
   msgEl.innerHTML = `
     <div class="msg-header"><span class="name">Tú</span></div>
-    <div class="msg-body"><p>${escapeHtml(text)}</p></div>
+    <div class="msg-body">${text ? `<p>${escapeHtml(text)}</p>` : ""}</div>
   `;
+  if (files.length) {
+    const list = document.createElement("div");
+    list.className = "msg-attachments";
+    for (const f of files) {
+      const chip = document.createElement("span");
+      chip.className = "attach-chip";
+      chip.textContent = `${fileIcon(f)} ${f.name} · ${formatSize(f.size)}`;
+      list.appendChild(chip);
+    }
+    msgEl.querySelector(".msg-body").appendChild(list);
+  }
   container.appendChild(msgEl);
   container.scrollTop = container.scrollHeight;
+}
+
+// ---- 0.1.2: archivos adjuntos de cualquier tipo (📎, arrastrar y soltar, pegar) ----
+const MAX_ATTACH_FILES = 10;
+const MAX_ATTACH_BYTES = 50 * 1024 * 1024;
+let pendingFiles = [];
+
+function formatSize(bytes) {
+  return bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+function fileIcon(f) {
+  const t = (f.type || "").split("/")[0];
+  const ext = (f.name.split(".").pop() || "").toLowerCase();
+  if (t === "image") return "🖼️";
+  if (t === "audio") return "🎵";
+  if (t === "video") return "🎬";
+  if (ext === "pdf") return "📕";
+  if (["xlsx", "xls", "csv", "ods"].includes(ext)) return "📊";
+  if (["pptx", "odp"].includes(ext)) return "📽️";
+  if (["zip", "7z", "rar"].includes(ext)) return "🗜️";
+  return "📄";
+}
+
+function addAttachments(fileList) {
+  for (const f of fileList) {
+    if (pendingFiles.length >= MAX_ATTACH_FILES) {
+      showNotificationToast({ title: "Demasiados archivos", message: `Máximo ${MAX_ATTACH_FILES} por mensaje.`, level: "warning" });
+      break;
+    }
+    if (f.size > MAX_ATTACH_BYTES) {
+      showNotificationToast({ title: "Archivo demasiado grande", message: `«${f.name}» pasa de 50 MB.`, level: "warning" });
+      continue;
+    }
+    pendingFiles.push(f);
+  }
+  renderAttachChips();
+}
+
+function renderAttachChips() {
+  const box = document.getElementById("attachChips");
+  box.replaceChildren();
+  box.hidden = !pendingFiles.length;
+  pendingFiles.forEach((f, i) => {
+    const chip = document.createElement("span");
+    chip.className = "attach-chip";
+    chip.textContent = `${fileIcon(f)} ${f.name} · ${formatSize(f.size)}`;
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.title = "Quitar";
+    remove.textContent = "✕";
+    remove.addEventListener("click", () => { pendingFiles.splice(i, 1); renderAttachChips(); });
+    chip.appendChild(remove);
+    box.appendChild(chip);
+  });
+}
+
+async function uploadAttachments(files) {
+  const form = new FormData();
+  for (const f of files) form.append("files", f, f.name);
+  const res = await fetch("/api/files/upload", { method: "POST", body: form });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : `HTTP ${res.status}`);
+  return data.files.map((f) => f.id);
+}
+
+function setupAttachments(input) {
+  const picker = document.getElementById("fileInput");
+  document.getElementById("btnAttach").addEventListener("click", () => picker.click());
+  picker.addEventListener("change", () => { addAttachments(picker.files); picker.value = ""; });
+  // Arrastrar y soltar en toda la zona del chat
+  const zone = document.querySelector(".chat-main") || document.body;
+  zone.addEventListener("dragover", (e) => {
+    if ([...(e.dataTransfer?.types || [])].includes("Files")) { e.preventDefault(); zone.classList.add("drop-target"); }
+  });
+  zone.addEventListener("dragleave", (e) => { if (e.target === zone) zone.classList.remove("drop-target"); });
+  zone.addEventListener("drop", (e) => {
+    zone.classList.remove("drop-target");
+    if (e.dataTransfer?.files?.length) { e.preventDefault(); addAttachments(e.dataTransfer.files); input.focus(); }
+  });
+  // Pegar archivos o capturas con Ctrl+V
+  input.addEventListener("paste", (e) => {
+    const files = [...(e.clipboardData?.files || [])];
+    if (files.length) { e.preventDefault(); addAttachments(files); }
+  });
 }
 
 function appendAssistantMessage(markdownContent, sources = [], deep = undefined) {
@@ -1284,12 +1380,28 @@ function setupEventListeners() {
   document.querySelectorAll("[data-app]").forEach((b) => b.addEventListener("click", () => launchApp(b.dataset.app)));
   document.querySelectorAll("[data-vol]").forEach((b) => b.addEventListener("click", () => adjustVolume(b.dataset.vol)));
 
-  form.addEventListener("submit", (e) => {
+  setupAttachments(input);
+
+  form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const text = input.value.trim();
-    if (!text || !ws) return;
+    if ((!text && !pendingFiles.length) || !ws) return;
 
-    appendUserMessage(text);
+    // 0.1.2: primero se suben los adjuntos; la consulta lleva sus ids
+    let attachments = [];
+    const files = pendingFiles.slice();
+    if (files.length) {
+      try {
+        attachments = await uploadAttachments(files);
+      } catch (err) {
+        showNotificationToast({ title: "No se pudieron subir los archivos", message: String(err.message || err), level: "warning" });
+        return;
+      }
+      pendingFiles = [];
+      renderAttachChips();
+    }
+
+    appendUserMessage(text, files);
     lastMlQuery = text;
     lastTurnDeep = null;
     input.value = "";
@@ -1304,6 +1416,7 @@ function setupEventListeners() {
     ws.send(JSON.stringify({
       action: "query",
       prompt: text,
+      attachments,
       mode: currentMode,
       reasoning: reasoningMode,
       speak: voiceEnabled

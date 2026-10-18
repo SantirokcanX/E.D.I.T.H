@@ -115,7 +115,11 @@
       <div class="thought-content" id="thoughtContent" style="display: none;"></div>
 
       <div class="chat-input-wrapper">
+        <!-- 0.1.2: archivos adjuntos (📎, arrastrar y soltar o pegar) -->
+        <div id="attachChips" class="attach-chips" hidden></div>
         <form id="chatForm">
+          <button type="button" id="btnAttach" class="icon-btn" title="Adjuntar archivos de cualquier tipo (o arrástralos al chat, o pégalos con Ctrl+V)">📎</button>
+          <input type="file" id="fileInput" multiple hidden>
           <button type="button" id="btnMicInput" class="icon-btn" title="Hablar por micrófono">🎙️</button>
           <textarea id="promptInput" placeholder="Escribe a EDITH... (Shift+Enter para salto de línea)" rows="1"></textarea>
           <button type="button" id="btnReasoning" class="reasoning-btn" title="Razonamiento automático: EDITH decide si pensar a fondo">🧠 Auto</button>

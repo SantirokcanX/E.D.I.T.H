@@ -682,6 +682,18 @@ select, textarea, input { font-family: var(--font-main); color: inherit; }
   flex-shrink: 0;
   padding: 10px 24px 18px;
 }
+/* 0.1.2: archivos adjuntos */
+.attach-chips { max-width: 740px; margin: 0 auto 6px; display: flex; flex-wrap: wrap; gap: 6px; }
+.attach-chip {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
+  padding: 4px 8px; border: 1px solid var(--border); border-radius: 999px;
+  background: var(--bg-elevated); font-size: 12px; color: var(--text-secondary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.attach-chip button { background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 0 2px; font-size: 11px; }
+.attach-chip button:hover { color: var(--danger); }
+.msg-attachments { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.chat-main.drop-target { outline: 2px dashed var(--accent); outline-offset: -8px; }
 #chatForm {
   max-width: 740px;
   margin: 0 auto;

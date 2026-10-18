@@ -33,6 +33,7 @@ from ide.auth import AccessGuard, access_link_hint
 from ide.channels_api import router as channels_router, start_channels, stop_channels
 from ide.setup_api import router as setup_router, same_origin
 from ide.code_api import router as code_router
+from ide import files_api
 from ide.voice_api import router as voice_router
 from agent.setup import settings as setup_settings
 
@@ -437,6 +438,17 @@ async def _handle_query(websocket: WebSocket, payload: Dict[str, Any], pending: 
             print(f"[ML] no se pudo aprender la preferencia de razonamiento: {e}")
     speak_response = payload.get("speak", True)
 
+    # 0.1.2: archivos adjuntos (cualquier formato). Su texto va solo en este turno y como dato no confiable
+    attach_prompt, attach_history = "", ""
+    if payload.get("attachments"):
+        attach_prompt, attach_history, problems = await files_api.prepare_attachments(
+            payload["attachments"], user_prompt,
+            lambda text: websocket.send_json({"type": "status", "text": text}))
+        for problem in problems:
+            await websocket.send_json({"type": "error", "message": problem})
+        if attach_prompt and not user_prompt:
+            user_prompt = "Revisa los archivos que te adjunté y dime qué contienen."
+
     if not user_prompt:
         return
 
@@ -486,7 +498,7 @@ async def _handle_query(websocket: WebSocket, payload: Dict[str, Any], pending: 
         result = await loop.run_in_executor(
             None,
             lambda: coworking_team.collaborate(
-                user_prompt,
+                f"{attach_prompt}\n\n{user_prompt}" if attach_prompt else user_prompt,
                 on_event=on_team_event,
                 context=ml_analysis.context if ml_analysis else ""
             )
@@ -557,7 +569,9 @@ async def _handle_query(websocket: WebSocket, payload: Dict[str, Any], pending: 
 
     res = await loop.run_in_executor(
         None,
-        lambda: edith_agent.run(user_prompt, callbacks=callbacks, think=deep)
+        lambda: edith_agent.run(f"{attach_prompt}\n\n{user_prompt}" if attach_prompt else user_prompt,
+                                callbacks=callbacks, think=deep, untrusted_input=bool(attach_prompt),
+                                history_prompt=f"{user_prompt}\n\n{attach_history}" if attach_prompt else None)
     )
 
     await websocket.send_json({
@@ -625,6 +639,7 @@ def index_page():
 
 
 app.include_router(channels_router)
+app.include_router(files_api.router)  # 0.1.2: archivos adjuntos en el chat
 app.include_router(code_router)  # Fase 7: ▶ Ejecutar (Python, con confirmación)
 app.include_router(setup_router)  # Fase 15.2: asistente de primer arranque y Ajustes
 app.include_router(voice_router)  # «Oye EDITH» con Whisper local

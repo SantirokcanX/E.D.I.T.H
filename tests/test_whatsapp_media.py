@@ -156,10 +156,11 @@ check("el documento queda en workspace/recibidos", (WORKSPACE_DIR / "recibidos" 
 r = inbound({"text": "¿cuánto pago?", "document_b64": base64.b64encode(make_docx(["Renta: 8,000"])).decode(),
              "document_name": "contrato.docx"})
 check("Word con pregunta", "Renta: 8,000" in seen_prompts[-1] and seen_prompts[-1].endswith("¿cuánto pago?"))
-r = inbound({"document_b64": base64.b64encode(b"x" * (10 * 1024 * 1024 + 1)).decode(), "document_name": "enorme.pdf"})
-check("archivos de más de 10 MB se rechazan", "10 MB" in r.get("reply_text", ""))
-r = inbound({"document_b64": base64.b64encode(b"PK").decode(), "document_name": "hoja.xlsx"})
-check("tipo no soportado: lo explica", "PDF, Word o texto" in r.get("reply_text", ""))
+r = inbound({"document_b64": base64.b64encode(b"x" * (25 * 1024 * 1024 + 1)).decode(), "document_name": "enorme.pdf"})
+check("archivos de más de 25 MB se rechazan (0.1.2: antes 10 MB)", "25 MB" in r.get("reply_text", ""))
+r = inbound({"document_b64": base64.b64encode(bytes(range(256)) * 4).decode(), "document_name": "datos.xyz"})
+check("un binario desconocido: dice qué es y dónde quedó, sin inventar", "Recibí «datos.xyz»" in r.get("reply_text", "")
+      and "workspace/recibidos" in r.get("reply_text", ""), r.get("reply_text"))
 
 # ======================= 4. Contenido externo = acciones con permiso =======================
 class SavePlan(FakeProvider):

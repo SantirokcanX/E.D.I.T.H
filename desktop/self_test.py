@@ -142,17 +142,20 @@ def run(report_path: Path) -> int:
             raise RuntimeError(f"falta el driver de Playwright: {node}")
         return f"Playwright {playwright_version} · driver {node.name}"
 
-    def documents_and_calendar():  # Fases 9 y 11: PDF, iCal
+    def documents_and_calendar():  # Fases 9 y 11 + 0.1.2: PDF, Excel, iCal y el lector universal
         import icalendar
+        import openpyxl
         import pypdf
         import recurring_ical_events  # noqa: F401
-        return f"pypdf {pypdf.__version__}, icalendar {icalendar.__version__}"
+        from agent import files
+        assert files.read_any(b"mes,total\nenero,1\n", "x.csv").get("label") == "tabla CSV"
+        return f"pypdf {pypdf.__version__}, openpyxl {openpyxl.__version__}, icalendar {icalendar.__version__}"
 
     for name, fn in [("versión", version), ("recursos", resources), ("servidor", server),
                      ("bridge de WhatsApp", whatsapp_bridge), ("numpy/scikit-learn", scientific), ("faster-whisper", whisper), ("PyAV (notas de voz)", audio),
                      ("pygame/edge-tts", sound_and_voice), ("voz de Windows (SAPI5)", sapi5),
                      ("ventana y bandeja", desktop), ("navegador (Playwright)", browser),
-                     ("PDF y calendario", documents_and_calendar), ("otras dependencias", others)]:
+                     ("archivos, PDF, Excel y calendario", documents_and_calendar), ("otras dependencias", others)]:
         probe(name, fn)
 
     ok = all(r[0] for r in results)

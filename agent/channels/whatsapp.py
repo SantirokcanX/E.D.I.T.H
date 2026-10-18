@@ -172,12 +172,15 @@ async def handle_inbound(provider, payload: Dict[str, Any]) -> Dict[str, Any]:
     return reply
 
 
-MAX_MEDIA_BYTES = 10 * 1024 * 1024
+MAX_MEDIA_BYTES = 25 * 1024 * 1024
+MAX_DOC_CHARS = 5000  # lo que entra al modelo; el texto completo queda en workspace/recibidos
 
 
 def _read_attachment(payload: Dict[str, Any], question: str):
-    """Foto o documento de WhatsApp -> (texto para el modelo, marcado como no confiable; o problema)."""
-    from .. import documents, vision
+    """Foto, vídeo o archivo de cualquier tipo por WhatsApp -> (texto para el modelo, marcado como no
+    confiable; o problema). Los archivos se leen con el lector universal (agent/files.py)."""
+    from .. import files as file_reader
+    from .. import vision
     from ..core.safety import mark_untrusted
     from ..paths import WORKSPACE_DIR
     key = "image_b64" if payload.get("image_b64") else "document_b64"
@@ -186,23 +189,28 @@ def _read_attachment(payload: Dict[str, Any], question: str):
     except Exception:
         return "", "No pude abrir lo que me mandaste. ¿Me lo reenvías?"
     if len(data) > MAX_MEDIA_BYTES:
-        return "", "Ese archivo pasa de 10 MB: mándame uno más ligero."
+        return "", "Ese archivo pasa de 25 MB: mándame uno más ligero."
     if key == "image_b64":
         desc, who = vision.describe_image(data, question, payload.get("image_mime") or "image/jpeg")
         if not desc:
             return "", f"📷 Recibí tu foto, pero todavía no puedo verla: {who}."
         return mark_untrusted("foto de WhatsApp", f"Lo que se ve en la foto que mandó el usuario: {desc}"), None
-    name = documents.safe_filename(payload.get("document_name"))
-    out = documents.extract_text(data, name, payload.get("document_mime") or "")
+    name = file_reader.safe_filename(payload.get("document_name"), "archivo")
+    out = file_reader.read_any(data, name, payload.get("document_mime") or "", question)
     if "error" in out:
         return "", f"📄 {out['error']}"
     folder = WORKSPACE_DIR / "recibidos"
     folder.mkdir(parents=True, exist_ok=True)
     (folder / name).write_bytes(data)  # queda en el workspace por si quieres que lo guarde o lo compare
-    pages = f", {out['pages']} páginas" if out.get("pages") else ""
-    cut = " (recortado)" if out.get("truncated") else ""
-    body = f"Documento «{name}» que mandó el usuario{pages}{cut}, guardado en workspace/recibidos:\n{out['text']}"
-    return mark_untrusted("documento de WhatsApp", body), None
+    text = out.get("text") or ""
+    if not text:  # programa, binario, imagen sin visión, vídeo sin voz...: se dice qué es
+        return "", f"📄 Recibí «{name}» ({out.get('label', '')}). {out.get('note', '')} Quedó en workspace/recibidos."
+    if len(text) > MAX_DOC_CHARS:
+        (folder / f"{name}.txt").write_text(text, encoding="utf-8")
+        text = text[:MAX_DOC_CHARS] + f"\n… (recortado; texto completo en workspace/recibidos/{name}.txt)"
+    note = f" {out['note']}" if out.get("note") else ""
+    body = f"Archivo «{name}» ({out.get('label', '')}) que mandó el usuario, guardado en workspace/recibidos.{note}\n{text}"
+    return mark_untrusted("archivo de WhatsApp", body), None
 
 
 def bridge_status() -> Dict[str, Any]:
