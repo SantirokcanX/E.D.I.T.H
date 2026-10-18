@@ -97,7 +97,28 @@ setup_js = (ROOT / "ide" / "static" / "setup.js").read_text(encoding="utf-8")
 check("el aviso se muestra una vez por versión («Ahora no» lo guarda)", "showUpdateNotice" in setup_js
       and "edith.update.dismissed" in setup_js)
 
-# ======================= 3. Script del instalador (Inno Setup) =======================
+# ======================= 3. Abrir la versión nueva reemplaza a la vieja (0.1.1) =======================
+import sys as _sys  # noqa: E402
+_sys.path.insert(0, str(ROOT / "desktop"))
+import desktop_app  # noqa: E402
+
+vt = desktop_app._version_tuple
+check("una EDITH sin instance.json (anterior a la 0.1.1) cuenta como más vieja", vt("") < vt(VERSION))
+check("0.0.9 abierta y abres la 0.1.1 -> se reemplaza; misma versión -> no", vt("0.0.9") < vt("0.1.1") and not vt(VERSION) < vt(VERSION))
+desktop_app.INSTANCE_FILE.unlink(missing_ok=True)
+check("sin archivo, la versión abierta es desconocida", desktop_app.running_instance_version() == "")
+desktop_app.write_instance_file()
+check("la instancia abierta deja su pid y versión", desktop_app.running_instance_version() == VERSION)
+desktop_app.remove_instance_file()
+check("y lo borra al cerrar", not desktop_app.INSTANCE_FILE.exists())
+rec = __import__("logging").LogRecord("pywebview", 40, "", 0, "WebView2 initialization failed with exception", None, None)
+check("un fallo real de WebView2 sí se anota", desktop_app._SkipAbortedWebView().filter(rec))
+desktop_app._closing.set()
+check("pero si EDITH se está cerrando mientras la ventana arranca, no (es el propio cierre)",
+      not desktop_app._SkipAbortedWebView().filter(rec))
+desktop_app._closing.clear()
+
+# ======================= 4. Script del instalador (Inno Setup) =======================
 iss = (ROOT / "build" / "installer" / "edith.iss").read_text(encoding="utf-8")
 check("instalación por usuario, sin administrador", "PrivilegesRequired=lowest" in iss and "DefaultDirName={userpf}\\EDITH" in iss)
 check("WhatsApp es un componente opcional", 'Name: "whatsapp"' in iss and "Components: whatsapp" in iss)

@@ -14,9 +14,11 @@
 
 import ctypes
 import hashlib
+import json
 import logging
 import multiprocessing
 import os
+import re
 import socket
 import sys
 import threading
@@ -56,6 +58,7 @@ kernel32.AttachConsole.argtypes = [wintypes.DWORD]
 kernel32.CreateMutexW.restype = wintypes.HANDLE
 kernel32.CreateEventW.restype = wintypes.HANDLE
 kernel32.OpenEventW.restype = wintypes.HANDLE
+kernel32.OpenMutexW.restype = wintypes.HANDLE
 user32.LoadImageW.restype = wintypes.HANDLE
 user32.SendMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
 ERROR_ALREADY_EXISTS = 183
@@ -71,6 +74,17 @@ class _SkipConnectionReset(logging.Filter):
         return not (record.exc_info and isinstance(record.exc_info[1], ConnectionResetError))
 
 
+_closing = threading.Event()  # EDITH se está cerrando (Salir, Windows se apaga u otra EDITH la reemplaza)
+
+
+class _SkipAbortedWebView(logging.Filter):
+    """Si EDITH se cierra mientras su ventana aún arranca, WebView2 aborta (E_ABORT) y pywebview lo anota
+    como ERROR. Es consecuencia del cierre, no un fallo: se omite solo en ese caso."""
+
+    def filter(self, record):
+        return not (_closing.is_set() and "WebView2 initialization failed" in record.getMessage())
+
+
 def setup_logging():
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
     handler = RotatingFileHandler(LOGS_DIR / "edith-desktop.log", maxBytes=2_000_000, backupCount=3, encoding="utf-8")
@@ -79,6 +93,7 @@ def setup_logging():
     root.setLevel(logging.INFO)
     root.addHandler(handler)
     logging.getLogger("asyncio").addFilter(_SkipConnectionReset())
+    logging.getLogger("pywebview").addFilter(_SkipAbortedWebView())
     # Sin consola (pythonw / EDITH.exe) stdout y stderr no existen: todo va al registro
     if sys.stdout is None or sys.stderr is None or not sys.stdout.isatty():
         stream = open(LOGS_DIR / "edith-desktop.out.log", "a", encoding="utf-8", buffering=1)
@@ -86,17 +101,75 @@ def setup_logging():
 
 
 # ---------------------------------------------------------------- instancia única
+INSTANCE_FILE = EDITH_HOME / "instance.json"  # qué EDITH está abierta (pid y versión)
+_mutex_handle = None
+
+
 def acquire_single_instance() -> bool:
-    """True si somos la primera instancia. Si no, pide a la existente que se muestre."""
-    kernel32.CreateMutexW(None, False, MUTEX_NAME)
+    """True si somos la primera instancia (y nos quedamos el mutex)."""
+    global _mutex_handle
+    handle = kernel32.CreateMutexW(None, False, MUTEX_NAME)
     if ctypes.get_last_error() != ERROR_ALREADY_EXISTS:
+        _mutex_handle = handle
         return True
+    if handle:
+        kernel32.CloseHandle(handle)  # no mantener vivo el mutex de la otra instancia
+    return False
+
+
+def show_existing_instance():
     EVENT_MODIFY_STATE = 0x0002
     handle = kernel32.OpenEventW(EVENT_MODIFY_STATE, False, SHOW_EVENT_NAME)
     if handle:
         user32.AllowSetForegroundWindow(-1)  # deja que la otra instancia pase al frente
         kernel32.SetEvent(handle)
         kernel32.CloseHandle(handle)
+
+
+def _version_tuple(text: str) -> tuple:
+    return tuple(int(n) for n in re.findall(r"\d+", text or "")[:4]) or (0,)
+
+
+def running_instance_version() -> str:
+    """Versión de la EDITH abierta; "" si no lo dice (las anteriores a la 0.1.1 no escribían instance.json)."""
+    try:
+        return str(json.loads(INSTANCE_FILE.read_text(encoding="utf-8")).get("version", ""))
+    except (OSError, ValueError):
+        return ""
+
+
+def write_instance_file():
+    try:
+        INSTANCE_FILE.write_text(json.dumps({"pid": os.getpid(), "version": VERSION, "packaged": FROZEN}),
+                                 encoding="utf-8")
+    except OSError:
+        pass
+
+
+def remove_instance_file():
+    try:
+        if json.loads(INSTANCE_FILE.read_text(encoding="utf-8")).get("pid") == os.getpid():
+            INSTANCE_FILE.unlink()
+    except (OSError, ValueError):
+        pass
+
+
+def replace_older_instance(timeout: float = 30.0) -> bool:
+    """Abriste una EDITH más nueva que la que ya estaba abierta (p. ej. tras actualizar): se cierra la
+    vieja con su evento de salida y esta ocupa su lugar. True si la vieja se cerró y ya tenemos el mutex."""
+    EVENT_MODIFY_STATE, SYNCHRONIZE = 0x0002, 0x00100000
+    handle = kernel32.OpenEventW(EVENT_MODIFY_STATE, False, QUIT_EVENT_NAME)
+    if not handle:
+        return False
+    kernel32.SetEvent(handle)
+    kernel32.CloseHandle(handle)
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        mutex = kernel32.OpenMutexW(SYNCHRONIZE, False, MUTEX_NAME)
+        if not mutex:  # nadie lo tiene: la vieja ya salió
+            return acquire_single_instance()
+        kernel32.CloseHandle(mutex)
+        time.sleep(0.3)
     return False
 
 
@@ -360,6 +433,7 @@ class DesktopApp:
 
     def quit(self):
         self.quitting = True
+        _closing.set()
         try:
             self.window.destroy()
         except Exception:
@@ -367,6 +441,7 @@ class DesktopApp:
 
     def shutdown(self):
         self.quitting = True
+        _closing.set()
         if self.hotkey_thread_id:
             user32.PostThreadMessageW(self.hotkey_thread_id, 0x0012, 0, 0)  # WM_QUIT
         if self.tray:
@@ -374,6 +449,7 @@ class DesktopApp:
         if self.server:
             self.server.should_exit = True  # dispara el apagado ordenado (detiene el bridge de WhatsApp)
             self.server_thread.join(timeout=10)
+        remove_instance_file()
         log.info("EDITH cerrada")
 
     # ------------------------------------------------ principal
@@ -442,8 +518,19 @@ def main():
         sys.exit(self_test.run(Path(report)))
     log.info("EDITH %s (%s)", VERSION, "app empaquetada" if FROZEN else "desde el código")
     if not acquire_single_instance():
-        log.info("EDITH ya estaba abierta: se muestra la ventana existente")
-        return
+        running = running_instance_version()
+        if _version_tuple(running) < _version_tuple(VERSION):
+            # Tras actualizar: abrir la nueva no debe traer al frente la versión vieja que seguía abierta
+            log.info("Hay una EDITH %s abierta y esta es la %s: se cierra la anterior", running or "anterior", VERSION)
+            if not replace_older_instance():
+                log.warning("La EDITH anterior no se cerró: se muestra su ventana")
+                show_existing_instance()
+                return
+        else:
+            log.info("EDITH ya estaba abierta: se muestra la ventana existente")
+            show_existing_instance()
+            return
+    write_instance_file()
     try:
         DesktopApp().run()
     except Exception:
