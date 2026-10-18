@@ -11,14 +11,14 @@ tags:
   - obsidian-sync
 created: 2026-10-15
 updated: 2026-10-17
-version: 0.1.0
+version: 0.1.2
 status: en-desarrollo
 ---
 
 # 👓 Plan Maestro y Hoja de Ruta: E.D.I.T.H.
 
 > [!info] Estado del Sistema
-> **E.D.I.T.H.** (Enhanced Dialectical Intelligence & Tactical Heuristics) está en la versión **0.1.0**: ya habla por **WhatsApp (texto y notas de voz)**, contesta y hace **llamadas telefónicas** (Twilio) y tiene **iniciativa propia** (recordatorios, alarmas que escalan a llamada, salud de la laptop, tareas de Obsidian y resumen matutino). Todo sobre su motor dual Qwen3 (100 % GPU, ~1 s), LaTeX, visión de pantalla y Obsidian. Desde la **v0.0.6** es una app de escritorio y la **v0.0.7** protege la interfaz y la API con token y pide tu permiso antes de ejecutar comandos. La **v0.0.8** se configura sola la primera vez (asistente que mira tu GPU y descarga los modelos) y todo se cambia en ⚙️ Ajustes, sin editar `.env`. Desde la **v0.0.9** se empaqueta como `EDITH.exe`, que funciona sin la carpeta del proyecto ni Python, con WhatsApp incluido sin necesidad de Node. En la **v0.0.10** cada voz vuelve a sonar distinta, llega la voz **«Viernes»** y **«Oye EDITH»** funciona dentro de la app, transcrito en local con Whisper. La **v0.1.0** completa todo lo que no depende del servidor: teclado, navegador propio, Home Assistant, calendario y correo, fotos y documentos por WhatsApp, LaTeX numerado, ▶ Ejecutar y el instalador `EDITH-Setup.exe`.
+> **E.D.I.T.H.** (Enhanced Dialectical Intelligence & Tactical Heuristics) está en la versión **0.1.2**: ya habla por **WhatsApp (texto y notas de voz)**, contesta y hace **llamadas telefónicas** (Twilio) y tiene **iniciativa propia** (recordatorios, alarmas que escalan a llamada, salud de la laptop, tareas de Obsidian y resumen matutino). Todo sobre su motor dual Qwen3 (100 % GPU, ~1 s), LaTeX, visión de pantalla y Obsidian. Desde la **v0.0.6** es una app de escritorio y la **v0.0.7** protege la interfaz y la API con token y pide tu permiso antes de ejecutar comandos. La **v0.0.8** se configura sola la primera vez (asistente que mira tu GPU y descarga los modelos) y todo se cambia en ⚙️ Ajustes, sin editar `.env`. Desde la **v0.0.9** se empaqueta como `EDITH.exe`, que funciona sin la carpeta del proyecto ni Python, con WhatsApp incluido sin necesidad de Node. En la **v0.0.10** cada voz vuelve a sonar distinta, llega la voz **«Viernes»** y **«Oye EDITH»** funciona dentro de la app, transcrito en local con Whisper. La **v0.1.0** completa todo lo que no depende del servidor: teclado, navegador propio, Home Assistant, calendario y correo, fotos y documentos por WhatsApp, LaTeX numerado, ▶ Ejecutar y el instalador `EDITH-Setup.exe`. La **v0.1.2** lee archivos de cualquier formato (📎, arrastrar o pegar en el chat, y por WhatsApp) y hace lo que le pidas con ellos.
 >
 > Pendiente inmediato: **Fase 8** (servidor 24/7 + URL pública), que es lo que permite que Twilio llegue a EDITH y que WhatsApp funcione con la laptop cerrada. Su requisito de seguridad (Fase 14) ya está listo en v0.0.7.
 >
@@ -230,7 +230,7 @@ timeline
 - [x] **Alertas proactivas por WhatsApp**: recordatorios, alarmas críticas ("responde *ok* o te llamo") y resumen matutino (Fase 11).
 - [x] Conversación propia por contacto que aparece en el historial; `/nuevo` empieza otra.
 - [x] **Seguridad**: lista blanca obligatoria (`AUTHORIZED_PHONE_NUMBERS`), silencio total con desconocidos, API del bridge solo en `127.0.0.1` con clave compartida, sin PowerShell/apps/pantalla desde WhatsApp.
-- [x] Imágenes y documentos por WhatsApp: fotos (visión local), PDF, Word y texto (v0.1.0).
+- [x] Imágenes y documentos por WhatsApp: fotos (visión local), PDF, Word y texto (v0.1.0). Desde la v0.1.2, cualquier archivo y también vídeos.
 - [ ] Probar con un número secundario real (requiere escanear el QR).
 
 ### ✅ Fase 10: Llamadas Telefónicas Bidireccionales (Twilio Voice) — v0.0.5
@@ -346,6 +346,19 @@ timeline
 
 ---
 
+### 📎 Archivos de cualquier formato (v0.1.2)
+> [!success] Lista (v0.1.2)
+> Adjunta lo que sea en el chat (📎, arrastrar y soltar o Ctrl+V) o por WhatsApp: EDITH lo lee y hace lo que le pidas. Detalle: [[Registro de Cambios de EDITH#v0.1.2 — 17/10/2026 · Archivos de cualquier formato]].
+
+- [x] Adjuntar en el chat: 📎, arrastrar y soltar o pegar; fichas quitables; 10 archivos y 50 MB por archivo.
+- [x] Lector universal: texto y código, PDF, Word, Excel, PowerPoint, OpenDocument, EPUB, RTF, correo, imágenes (visión), audio y vídeo (Whisper), ZIP; programas identificados sin ejecutarse.
+- [x] El contenido va solo en ese turno y como dato no confiable; el historial guarda dónde quedó el texto completo.
+- [x] WhatsApp: cualquier archivo y vídeos (25 MB).
+- [ ] PDF escaneados con OCR directo (hoy: mandarlos como imagen) y hojas `.xls` antiguas (hoy: pasarlas a `.xlsx`).
+- [ ] Devolver archivos modificados (p. ej. el Excel corregido) como descarga.
+
+---
+
 ## ⚡ Cuello de botella de velocidad - RESUELTO (v0.0.4)
 > [!success] Antes → ahora
 > `deepseek-r1:8b` no cabía en la GPU (25-30 % en CPU) y siempre razonaba: **20-33 s** por respuesta simple.
@@ -364,4 +377,4 @@ timeline
 - `01 - Diario/`: conversaciones archivadas desde EDITH.
 
 ---
-*Actualizado el 17/10/2026 - versión 0.1.0.*
+*Actualizado el 17/10/2026 - versión 0.1.2.*

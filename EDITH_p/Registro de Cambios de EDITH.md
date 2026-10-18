@@ -13,6 +13,65 @@ Bitácora técnica de cada versión. Plan general: [[Plan de Cambios y Evolució
 
 ---
 
+## v0.1.2 — 17/10/2026 · Archivos de cualquier formato
+Pedido de Diego: «que pueda cargarle archivos de cualquier formato, que los lea y que haga lo que le pida». Commit `5d4016f` en `main`.
+
+> [!success] En una frase
+> Arrastra al chat (o adjunta con 📎, o pega con Ctrl+V) **lo que sea**: EDITH lo lee y hace lo que le pidas con él. Por WhatsApp, igual.
+
+### 📎 En el chat
+- Botón **📎**, **arrastrar y soltar** sobre el chat (se marca la zona) o **pegar con Ctrl+V** (también capturas de pantalla).
+- Antes de enviar, cada archivo sale como una ficha con icono, nombre y tamaño; se puede quitar con ✕. Hasta **10 archivos** por mensaje y **50 MB** cada uno.
+- Mientras los lee, EDITH dice «📎 Leyendo «factura.pdf»…». Sin texto, revisa los archivos y dice qué contienen.
+- Se guardan en `workspace/adjuntos`; el texto que se saca de cada uno, en `adjuntos/<nombre>.txt`.
+
+### 📚 Qué sabe leer (`agent/files.py`)
+| Tipo | Cómo |
+|---|---|
+| Texto y código | Cualquier codificación (UTF-8, UTF-16, Windows-1252): `.txt`, `.md`, `.csv`, `.json`, `.py`, `.js`, `.html` (sin etiquetas ni scripts)… |
+| Documentos | PDF (por página), Word `.docx`, OpenDocument `.odt`, RTF, EPUB |
+| Hojas | Excel `.xlsx` (todas las hojas), CSV, OpenDocument `.ods`. Un `.xls` antiguo: explica cómo pasarlo a `.xlsx` |
+| Presentaciones | PowerPoint `.pptx` (por diapositiva), `.odp` |
+| Correo | `.eml` con remitente, asunto, cuerpo y adjuntos |
+| Imágenes | Las describe y transcribe su texto con la visión (modelo local o Gemini) |
+| Audio y vídeo | Transcribe lo que se dice con Whisper (hasta 20 min) y da duración y tamaño |
+| ZIP | Lista lo que trae y lee hasta 5 archivos de dentro |
+| Programas (`.exe`, `.msi`, `.dll`…) | Los identifica y **nunca los ejecuta** |
+| Cualquier otro | Dice qué es, su tamaño y su huella SHA-256, sin inventar |
+
+Manda el contenido, no la extensión: un PDF llamado `.txt` se lee como PDF. Nada se ejecuta ni se abre con otros programas; todo se lee en memoria.
+
+### 🛡️ Con cuidado
+- El contenido de cada archivo llega al modelo **marcado como dato no confiable** y ese turno cuenta como contenido externo: guardar archivos, escribir en Obsidian o manejar la casa piden permiso (un documento podría traer órdenes escondidas).
+- **El contexto no se llena**: el texto de los adjuntos va solo en ese turno (repartido entre los archivos, unos 9 000 caracteres). Al historial y a la conversación guardada en disco pasa una lista corta con dónde quedó cada archivo. Si luego preguntas por ellos, EDITH los relee con `read_workspace_file`, que ahora **lee por partes** (12 000 caracteres y `offset`).
+- La subida exige el token y el mismo `Origin`. Los nombres se limpian (`../` no sale de `adjuntos`) y solo se aceptan ids de archivos subidos.
+
+### 💬 WhatsApp
+Mismo lector para **cualquier archivo** (antes solo PDF, Word y texto) y ahora también **vídeos** (transcribe su audio). Límite: 25 MB. Si mandas un programa o un binario, EDITH dice qué es y dónde lo guardó, sin hacer trabajar al modelo.
+
+### 🧪 Pruebas
+- `tests/test_archivos.py` **46/46**, con archivos reales de cada formato generados en la prueba (texto en 3 codificaciones, CSV, JSON, HTML, código, PDF, Word, Excel de 2 hojas, PowerPoint, OpenDocument, EPUB, RTF, correo, imagen, WAV, MP4 con vídeo y audio, ZIP, `.exe`, binario y `.xls`). Además: subida, `../`, límites, consulta con adjuntos por el chat, historial sin el contenido, permiso para guardar y WhatsApp. La visión y Whisper están simulados.
+- **Con el modelo real** en el navegador integrado: arrastraste una factura PDF y un CSV de consumo y preguntaste «¿cuánto pago de luz, cuándo vence y bajó mi consumo?». EDITH respondió bien: **845 pesos, vence el 30 de octubre y sí bajó (210 → 190 kWh)**.
+- Todas las suites: **603/603** (13 suites). Paquete: autocomprobación **13/13** (ahora incluye Excel y el lector universal). Instalador real `EDITH-Setup-0.1.2.exe` (168 MB): instala, autocomprueba y desinstala sin dejar archivos ni tocar tus accesos, tu inicio con Windows ni tus datos.
+
+---
+
+## v0.1.1 — 17/10/2026 · «Sin servicio de voz»: abrir la versión nueva reemplaza a la vieja
+Commit `dac8cc5` en `main`.
+
+**Qué pasó**: tu EDITH llevaba abierta desde las 9:36 con la **v0.0.9**. A las 19:58 abriste EDITH (ya la 0.1.0), pero la regla de «una sola instancia» solo trajo al frente la que estaba abierta. Seguías con el «Oye EDITH» viejo (reconocimiento del navegador, que WebView2 no tiene): de ahí «sin servicio de voz». La 0.1.0 ya usa Whisper local y ni siquiera tiene ese mensaje.
+
+**Arreglo**:
+- La EDITH abierta deja en `%LOCALAPPDATA%\EDITH\instance.json` su pid y su versión (y lo borra al cerrar).
+- Si abres una **versión más nueva** (o hay una abierta sin ese archivo, anterior a la 0.1.1), la nueva cierra la vieja con su evento de salida, espera a que suelte su candado y ocupa su lugar. Con la misma versión, como antes, solo muestra la ventana abierta.
+- Ya no se anota como ERROR el aborto de WebView2 cuando EDITH se cierra mientras su ventana aún arranca.
+- **Prueba real** con instancias ocultas y datos temporales: **8/8**. Abrir la misma versión muestra la abierta; una más vieja o sin `instance.json` se reemplaza; al cerrar se borra el archivo; sin errores en el registro y sin tocar tu EDITH.
+
+> [!tip] Si te vuelve a pasar con una versión anterior
+> Clic derecho en el icono de EDITH junto al reloj › **Salir** y vuelve a abrirla. Desde la 0.1.1 ya no hace falta.
+
+---
+
 ## v0.1.0 — 17/10/2026 · Todo lo que faltaba, menos el servidor
 Pedido de Diego: «haz todo lo que falta menos lo del servidor». Queda fuera lo que necesita la PC servidor (Fase 8): la URL pública de las llamadas, las llamadas delegadas, el modo cliente y la webcam (Diego la conectará al servidor). Commits `bb3428d` a `09b6323` en `main`, encima de la v0.0.10 (voces y «Oye EDITH», `a471a60`).
 
